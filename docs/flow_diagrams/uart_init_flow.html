@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UART Init Flow</title>
+  <style>
+    :root {
+      --bg: #f5f1e8;
+      --panel: #fffdf8;
+      --ink: #1f2937;
+      --muted: #5f6b7a;
+      --accent: #d97706;
+      --accent-soft: #fde7c1;
+      --line: #d8cfc0;
+      --shadow: 0 14px 32px rgba(44, 39, 31, 0.08);
+      --radius: 22px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Georgia, "Noto Serif TC", "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, #fff7df 0, transparent 35%),
+        radial-gradient(circle at bottom right, #f3dfc3 0, transparent 30%),
+        var(--bg);
+    }
+
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 48px 24px 72px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, rgba(255, 253, 248, 0.98), rgba(255, 247, 223, 0.95));
+      border: 1px solid rgba(217, 119, 6, 0.14);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      padding: 36px;
+      margin-bottom: 28px;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: #8a4b04;
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 14px 0 10px;
+      font-size: clamp(2rem, 4vw, 3.3rem);
+      line-height: 1.05;
+      font-weight: 700;
+    }
+
+    .subtitle {
+      margin: 0;
+      max-width: 820px;
+      color: var(--muted);
+      font-size: 1.08rem;
+      line-height: 1.75;
+    }
+
+    .legend {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin: 24px 0 34px;
+    }
+
+    .legend-card,
+    .step,
+    .notes,
+    .register-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .legend-card {
+      padding: 18px 20px;
+    }
+
+    .legend-card h2,
+    .section-title {
+      margin: 0 0 8px;
+      font-size: 1rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #8a4b04;
+    }
+
+    .legend-card p,
+    .step p,
+    .notes li,
+    .register-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .flow {
+      display: grid;
+      gap: 18px;
+      margin-bottom: 34px;
+    }
+
+    .step {
+      position: relative;
+      padding: 24px 24px 24px 86px;
+      overflow: hidden;
+    }
+
+    .step::before {
+      content: "";
+      position: absolute;
+      left: 36px;
+      top: 76px;
+      width: 2px;
+      height: calc(100% + 22px);
+      background: linear-gradient(to bottom, rgba(217, 119, 6, 0.5), rgba(217, 119, 6, 0.08));
+    }
+
+    .step:last-child::before {
+      display: none;
+    }
+
+    .badge {
+      position: absolute;
+      left: 18px;
+      top: 22px;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.95rem;
+    }
+
+    .step h3 {
+      margin: 0 0 10px;
+      font-size: 1.35rem;
+    }
+
+    .code {
+      margin: 14px 0 12px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: #241f1a;
+      color: #f8e7c4;
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: 0.95rem;
+      overflow-x: auto;
+    }
+
+    .meaning {
+      margin-top: 12px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: #fbf4e5;
+      border: 1px solid #eedfc1;
+    }
+
+    .meaning strong {
+      color: #7b4a10;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 22px;
+    }
+
+    .notes {
+      padding: 24px;
+    }
+
+    .notes ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    .notes li + li {
+      margin-top: 10px;
+    }
+
+    .registers {
+      display: grid;
+      gap: 14px;
+    }
+
+    .register-card {
+      padding: 18px 20px;
+    }
+
+    .register-card h3 {
+      margin: 0 0 8px;
+      font-size: 1.05rem;
+    }
+
+    .register-card code {
+      color: #7c3e09;
+      font-weight: 700;
+    }
+
+    @media (max-width: 860px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .step {
+        padding-left: 74px;
+      }
+
+      .hero {
+        padding: 28px 22px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="eyebrow">Milestone 1</div>
+      <h1>UART Initialization Flow</h1>
+      <p class="subtitle">
+        This diagram explains what our current <code>uart::init()</code> actually does on a
+        16550-compatible UART. The goal is not to memorize magic numbers, but to understand
+        which hardware state each step is trying to establish.
+      </p>
+    </section>
+
+    <section class="legend">
+      <article class="legend-card">
+        <h2>Big Picture</h2>
+        <p>We are preparing the serial device so later <code>println!</code> can turn Rust text into bytes on the QEMU serial console.</p>
+      </article>
+      <article class="legend-card">
+        <h2>Why It Exists</h2>
+        <p>Without this setup, UART may still be in an unknown state, so writing bytes might not show anything visible.</p>
+      </article>
+      <article class="legend-card">
+        <h2>Mindset</h2>
+        <p>Think of this as a hardware bring-up checklist: disable surprises, choose a line format, clear buffers, then send text.</p>
+      </article>
+    </section>
+
+    <section class="flow">
+      <article class="step">
+        <div class="badge">1</div>
+        <h3>Disable Interrupts</h3>
+        <div class="code">write_reg(IER, 0x00);</div>
+        <p>We turn off UART-generated interrupts first, because this milestone uses simple polling-style output rather than interrupt-driven I/O.</p>
+        <div class="meaning">
+          <strong>IER</strong> means <em>Interrupt Enable Register</em>. It controls which UART events are allowed to interrupt the CPU.
+        </div>
+      </article>
+
+      <article class="step">
+        <div class="badge">2</div>
+        <h3>Enter Baud-Rate Setup Mode</h3>
+        <div class="code">write_reg(LCR, LCR_DLAB);</div>
+        <p>We temporarily switch the UART into a mode where register offsets <code>0</code> and <code>1</code> no longer mean normal transmit/interrupt registers. They become the divisor-latch registers instead.</p>
+        <div class="meaning">
+          <strong>LCR</strong> means <em>Line Control Register</em>. <strong>DLAB</strong> means <em>Divisor Latch Access Bit</em>.
+        </div>
+      </article>
+
+      <article class="step">
+        <div class="badge">3</div>
+        <h3>Program the Baud-Rate Divisor</h3>
+        <div class="code">write_reg(DLL, 0x01);
+write_reg(DLM, 0x00);</div>
+        <p>These two writes store the baud-rate divisor as a 16-bit value. In our current code, the divisor is <code>1</code>, which is enough for this QEMU-based learning setup.</p>
+        <div class="meaning">
+          <strong>DLL</strong> and <strong>DLM</strong> mean <em>Divisor Latch Low</em> and <em>Divisor Latch High</em>.
+        </div>
+      </article>
+
+      <article class="step">
+        <div class="badge">4</div>
+        <h3>Return to Normal Line Format</h3>
+        <div class="code">write_reg(LCR, LCR_8N1);</div>
+        <p>After programming the divisor, we switch back into normal line-control mode and choose the classic serial format: 8 data bits, no parity, 1 stop bit.</p>
+        <div class="meaning">
+          <strong>8N1</strong> is serial shorthand for <em>8 data bits, No parity, 1 stop bit</em>.
+        </div>
+      </article>
+
+      <article class="step">
+        <div class="badge">5</div>
+        <h3>Enable and Clear FIFOs</h3>
+        <div class="code">write_reg(FCR, 0x07);</div>
+        <p>This turns on the internal FIFO queues and clears any stale data that may already be sitting inside the UART buffers.</p>
+        <div class="meaning">
+          <strong>FIFO</strong> means <em>First In, First Out</em>. It is the UART's small internal queue for incoming and outgoing bytes.
+        </div>
+      </article>
+
+      <article class="step">
+        <div class="badge">6</div>
+        <h3>Mark the Port as Ready</h3>
+        <div class="code">write_reg(MCR, 0x03);</div>
+        <p>We set traditional modem-control readiness bits. In QEMU this is mostly part of the common 16550 bring-up recipe, but on real serial hardware these bits can matter more.</p>
+        <div class="meaning">
+          <strong>MCR</strong> means <em>Modem Control Register</em>. The usual ready-style bits here are <strong>DTR</strong> and <strong>RTS</strong>.
+        </div>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="notes">
+        <h2 class="section-title">Reading Notes</h2>
+        <ul>
+          <li>This sequence is not a universal law for every UART. It is a small, practical recipe for a 16550-compatible device.</li>
+          <li>The values themselves are less important than the intent behind each step: disable interrupts, configure timing, configure frame format, clear buffers, mark ready.</li>
+          <li>For Milestone 1, this is enough. We are not yet doing input handling, interrupts, or advanced flow control.</li>
+          <li>The real teaching value is seeing that driver initialization usually means “write a specific state into several control registers.”</li>
+        </ul>
+      </article>
+
+      <section class="registers">
+        <article class="register-card">
+          <h2 class="section-title">Name Cheat Sheet</h2>
+          <h3><code>THR</code></h3>
+          <p>Transmit Holding Register. Writing one byte here asks the UART to send it.</p>
+        </article>
+        <article class="register-card">
+          <h3><code>LCR</code></h3>
+          <p>Line Control Register. Controls how each serial frame is shaped.</p>
+        </article>
+        <article class="register-card">
+          <h3><code>DLL / DLM</code></h3>
+          <p>The low and high halves of the baud-rate divisor. Together they decide serial timing.</p>
+        </article>
+        <article class="register-card">
+          <h3><code>FCR</code></h3>
+          <p>FIFO Control Register. Used to enable and clean internal buffering.</p>
+        </article>
+        <article class="register-card">
+          <h3><code>MCR</code></h3>
+          <p>Modem Control Register. Extra readiness and control bits for serial-port behavior.</p>
+        </article>
+      </section>
+    </section>
+  </main>
+</body>
+</html>
