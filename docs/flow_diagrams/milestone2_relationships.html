@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Milestone 2 Relationships</title>
+  <style>
+    :root {
+      --bg: #f4efe7;
+      --panel: #fffdfa;
+      --ink: #1d2939;
+      --muted: #667085;
+      --accent: #0f766e;
+      --accent-soft: #d8f3ef;
+      --warn: #b45309;
+      --warn-soft: #fde7c7;
+      --line: #d7d0c4;
+      --shadow: 0 18px 36px rgba(32, 24, 16, 0.08);
+      --radius: 24px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Georgia, "Noto Serif TC", "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, #fff7eb 0, transparent 34%),
+        radial-gradient(circle at bottom right, #d9efe7 0, transparent 28%),
+        var(--bg);
+    }
+
+    .page {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 44px 24px 72px;
+    }
+
+    .hero,
+    .section,
+    .note-card,
+    .node {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      padding: 34px;
+      margin-bottom: 26px;
+      background: linear-gradient(135deg, rgba(255, 253, 250, 0.98), rgba(216, 243, 239, 0.55));
+    }
+
+    .eyebrow {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: #0b5d57;
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 14px 0 10px;
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      line-height: 1.05;
+    }
+
+    .subtitle {
+      margin: 0;
+      max-width: 880px;
+      color: var(--muted);
+      font-size: 1.08rem;
+      line-height: 1.8;
+    }
+
+    .section {
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    .section-title {
+      margin: 0 0 16px;
+      font-size: 1rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #0b5d57;
+    }
+
+    .flow {
+      display: grid;
+      gap: 18px;
+    }
+
+    .lane-title {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 0.95rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .nodes {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .node {
+      position: relative;
+      flex: 1 1 220px;
+      min-width: 220px;
+      padding: 18px 18px 20px;
+    }
+
+    .node.core {
+      border-color: rgba(15, 118, 110, 0.24);
+    }
+
+    .node.test {
+      border-color: rgba(180, 83, 9, 0.24);
+      background: linear-gradient(180deg, rgba(253, 231, 199, 0.28), rgba(255, 253, 250, 1));
+    }
+
+    .tag {
+      display: inline-block;
+      margin-bottom: 10px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      background: var(--accent-soft);
+      color: #0b5d57;
+    }
+
+    .tag.test {
+      background: var(--warn-soft);
+      color: #8a4b04;
+    }
+
+    .node h3 {
+      margin: 0 0 8px;
+      font-size: 1.15rem;
+    }
+
+    .node p,
+    .note-card p,
+    .bullets li {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .arrow-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin: 12px 0 4px;
+      color: #0b5d57;
+      font-weight: 700;
+    }
+
+    .arrow-row.test {
+      color: #8a4b04;
+    }
+
+    .arrow {
+      font-size: 1.2rem;
+    }
+
+    .matrix {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 20px;
+    }
+
+    .note-card {
+      padding: 22px;
+    }
+
+    .note-card.warn {
+      background: linear-gradient(180deg, rgba(253, 231, 199, 0.42), rgba(255, 253, 250, 1));
+    }
+
+    .bullets {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .bullets li + li {
+      margin-top: 10px;
+    }
+
+    .mini-code {
+      margin-top: 12px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: #1f2430;
+      color: #f7edd9;
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: 0.92rem;
+      overflow-x: auto;
+    }
+
+    @media (max-width: 900px) {
+      .matrix {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="eyebrow">Milestone 2</div>
+      <h1>Panic, Test Harness, and QEMU Exit Relationships</h1>
+      <p class="subtitle">
+        This diagram shows how the current implementation separates the normal kernel path from the
+        <code>test-kernel</code> path. The most important design rule is that <code>qemu::exit_*</code>
+        exists only for the test harness world, not for ordinary kernel logic.
+      </p>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Normal Kernel Path</h2>
+      <div class="flow">
+        <p class="lane-title">What happens when the kernel boots without the <code>test-kernel</code> feature</p>
+        <div class="nodes">
+          <article class="node core">
+            <div class="tag">Entry</div>
+            <h3><code>kernel_main()</code></h3>
+            <p>Clears BSS, initializes the console, prints the boot banner, then waits forever.</p>
+          </article>
+          <article class="node core">
+            <div class="tag">Output</div>
+            <h3><code>console</code></h3>
+            <p>Provides <code>print!</code> and <code>println!</code>, then delegates actual byte output to the UART driver.</p>
+          </article>
+          <article class="node core">
+            <div class="tag">Failure Policy</div>
+            <h3><code>panic::handle()</code></h3>
+            <p>Prints the panic message and stops in a waiting loop. It does not try to exit QEMU.</p>
+          </article>
+        </div>
+        <div class="arrow-row">
+          <span><code>main.rs</code></span>
+          <span class="arrow">→</span>
+          <span><code>console::print</code></span>
+          <span class="arrow">→</span>
+          <span><code>driver::uart</code></span>
+          <span class="arrow">→</span>
+          <span>serial output</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Test-Kernel Path</h2>
+      <div class="flow">
+        <p class="lane-title">What changes when the kernel is built with <code>--features test-kernel</code></p>
+        <div class="nodes">
+          <article class="node test">
+            <div class="tag test">Feature Gate</div>
+            <h3><code>main.rs</code></h3>
+            <p>Instead of printing the normal boot banner, the boot path immediately transfers control to the test runner.</p>
+          </article>
+          <article class="node test">
+            <div class="tag test">Harness</div>
+            <h3><code>test::run()</code></h3>
+            <p>Prints <code>running N tests</code>, executes each test case, and marks successful tests as <code>ok</code>.</p>
+          </article>
+          <article class="node test">
+            <div class="tag test">Host Signal</div>
+            <h3><code>driver::qemu</code></h3>
+            <p>Reports success or failure back to the host by writing to the QEMU test finisher device.</p>
+          </article>
+        </div>
+        <div class="arrow-row test">
+          <span><code>main.rs</code></span>
+          <span class="arrow">→</span>
+          <span><code>test::run()</code></span>
+          <span class="arrow">→</span>
+          <span><code>qemu::exit_success()</code></span>
+          <span class="arrow">→</span>
+          <span>QEMU exits with pass status</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Panic Behavior Split</h2>
+      <div class="matrix">
+        <article class="note-card">
+          <h3>Normal Mode Panic</h3>
+          <p>Normal kernel behavior should look like a real kernel failure path: print the panic message, then stop. No emulator-specific exit shortcut is used here.</p>
+          <div class="mini-code">panic::handle(info)
+  -> println!("[panic] ...")
+  -> wait_forever()</div>
+        </article>
+
+        <article class="note-card warn">
+          <h3>Test Mode Panic</h3>
+          <p>Test mode adds one extra responsibility: it must tell the host that the run failed, otherwise the harness cannot distinguish panic from a hang.</p>
+          <div class="mini-code">panic::handle(info)
+  -> println!("[panic] ...")
+  -> qemu::exit_failure()</div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Dependency Boundaries</h2>
+      <div class="matrix">
+        <article class="note-card">
+          <h3>Allowed Dependencies</h3>
+          <ul class="bullets">
+            <li><code>main.rs</code> may call the test runner only when the <code>test-kernel</code> feature is enabled.</li>
+            <li><code>test/mod.rs</code> may call <code>qemu::exit_success()</code> because it is part of the test harness layer.</li>
+            <li><code>panic.rs</code> may call <code>qemu::exit_failure()</code> only in test mode.</li>
+          </ul>
+        </article>
+
+        <article class="note-card warn">
+          <h3>Disallowed Dependencies</h3>
+          <ul class="bullets">
+            <li>General kernel logic should not call <code>qemu::exit_*</code>.</li>
+            <li>Future modules like memory, task, syscall, or filesystem should not know whether they are running under QEMU.</li>
+            <li><code>qemu::exit_*</code> is not a generic error-handling API. It is only a host-observation mechanism for test infrastructure.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

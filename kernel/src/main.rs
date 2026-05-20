@@ -4,6 +4,9 @@
 mod arch;
 mod console;
 mod driver;
+mod panic;
+#[cfg(feature = "test-kernel")]
+mod test;
 
 use core::panic::PanicInfo;
 
@@ -11,16 +14,24 @@ use core::panic::PanicInfo;
 extern "C" fn kernel_main(_hart_id: usize, _dtb_pa: usize) -> ! {
     clear_bss();
     console::init();
+
+    #[cfg(feature = "test-kernel")]
+    {
+        test::run()
+    }
+
+    #[cfg(not(feature = "test-kernel"))]
+    {
     println!("[boot] kernel entered");
     println!("[boot] arch = riscv64");
     println!("[debug] uart ready");
     arch::riscv64::boot::wait_forever()
+    }
 }
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    println!("[panic] {}", info);
-    arch::riscv64::boot::wait_forever()
+    panic::handle(info)
 }
 
 fn clear_bss() {
