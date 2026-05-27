@@ -22,10 +22,14 @@ extern "C" fn kernel_main(_hart_id: usize, _dtb_pa: usize) -> ! {
 
     #[cfg(not(feature = "test-kernel"))]
     {
-    println!("[boot] kernel entered");
-    println!("[boot] arch = riscv64");
-    println!("[debug] uart ready");
-    arch::riscv64::boot::wait_forever()
+        arch::riscv64::trap::init();
+        println!("[boot] kernel entered");
+        println!("[boot] arch = riscv64");
+        println!("[debug] uart ready");
+        println!("[debug] trap ready");
+        println!("[debug] triggering illegal instruction");
+        arch::riscv64::trap::trigger_illegal_instruction();
+        arch::riscv64::boot::wait_forever()
     }
 }
 
