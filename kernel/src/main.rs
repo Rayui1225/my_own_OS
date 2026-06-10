@@ -27,8 +27,8 @@ extern "C" fn kernel_main(_hart_id: usize, _dtb_pa: usize) -> ! {
         println!("[boot] arch = riscv64");
         println!("[debug] uart ready");
         println!("[debug] trap ready");
-        println!("[debug] triggering illegal instruction");
-        arch::riscv64::trap::trigger_illegal_instruction();
+        println!("[debug] enabling timer");
+        arch::riscv64::timer::init();
         arch::riscv64::boot::wait_forever()
     }
 }

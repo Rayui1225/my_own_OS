@@ -4,7 +4,7 @@ use core::arch::{asm, global_asm};
 
 use crate::println;
 
-use super::csr;
+use super::{csr, timer};
 pub use frame::{TrapCause, TrapFrame};
 
 global_asm!(include_str!("entry.S"));
@@ -26,7 +26,7 @@ pub fn trigger_breakpoint() {
     }
 }
 
-#[cfg_attr(feature = "test-kernel", allow(dead_code))]
+#[allow(dead_code)]
 pub fn trigger_illegal_instruction() {
     unsafe {
         asm!(".4byte 0xffffffff", options(nomem, nostack));
@@ -41,11 +41,13 @@ extern "C" fn trap_entry_rust(frame: &mut TrapFrame) {
             println!("[trap] sepc = {:#x}", frame.sepc);
             frame.advance_sepc_by_4(); // Skip the breakpoint instruction, if we don't do this, we'll hit the same breakpoint again and again
         }
+        TrapCause::SupervisorTimerInterrupt => {
+            timer::handle_interrupt();
+        }
         TrapCause::IllegalInstruction
         | TrapCause::LoadPageFault
         | TrapCause::StorePageFault
         | TrapCause::UserEcall
-        | TrapCause::SupervisorTimerInterrupt
         | TrapCause::Unknown { .. } => {
             log_trap(frame);
             panic!("unhandled trap");
