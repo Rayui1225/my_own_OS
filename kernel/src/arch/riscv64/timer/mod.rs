@@ -7,7 +7,7 @@ use super::{csr, sbi};
 const TICK_INTERVAL: u64 = 1_000_000;
 static TICKS: AtomicUsize = AtomicUsize::new(0);
 
-#[cfg_attr(feature = "test-kernel", allow(dead_code))]
+#[allow(dead_code)]
 pub fn init() {
     csr::enable_supervisor_timer_interrupt();
     csr::enable_supervisor_interrupts();

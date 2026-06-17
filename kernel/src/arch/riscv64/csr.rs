@@ -32,6 +32,7 @@ pub fn read_time() -> u64 {
 }
 
 #[cfg_attr(feature = "test-kernel", allow(dead_code))]
+#[allow(dead_code)]
 pub fn enable_supervisor_interrupts() {
     const SSTATUS_SIE: usize = 1 << 1;
 
@@ -45,6 +46,7 @@ pub fn enable_supervisor_interrupts() {
 }
 
 #[cfg_attr(feature = "test-kernel", allow(dead_code))]
+#[allow(dead_code)]
 pub fn enable_supervisor_timer_interrupt() {
     const SIE_STIE: usize = 1 << 5;
 

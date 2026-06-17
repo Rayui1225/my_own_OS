@@ -7,6 +7,7 @@ BOOT_STACK_SIZE = 16K;
 SECTIONS
 {
     . = KERNEL_BASE;
+    PROVIDE(skernel = .);
 
     .text : ALIGN(4K) {
         *(.text.entry)
@@ -31,6 +32,8 @@ SECTIONS
         *(COMMON)
         PROVIDE(ebss = .);
     }
+
+    PROVIDE(ekernel = .);
 
     /DISCARD/ : {
         *(.eh_frame)

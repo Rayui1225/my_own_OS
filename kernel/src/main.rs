@@ -4,6 +4,7 @@
 mod arch;
 mod console;
 mod driver;
+mod memory;
 mod panic;
 #[cfg(feature = "test-kernel")]
 mod test;
@@ -27,8 +28,15 @@ extern "C" fn kernel_main(_hart_id: usize, _dtb_pa: usize) -> ! {
         println!("[boot] arch = riscv64");
         println!("[debug] uart ready");
         println!("[debug] trap ready");
-        println!("[debug] enabling timer");
-        arch::riscv64::timer::init();
+        memory::init();
+        println!("[memory] total usable frames = {}", memory::total_usable_frames());
+        if let Some(frame) = memory::alloc_frame() {
+            println!("[memory] alloc frame = {:#x}", frame.start_address());
+            memory::dealloc_frame(frame);
+            println!("[memory] free frame = {:#x}", frame.start_address());
+        } else {
+            println!("[memory] alloc frame = none");
+        }
         arch::riscv64::boot::wait_forever()
     }
 }

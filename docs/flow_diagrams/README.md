@@ -7,6 +7,7 @@ Current diagrams:
 - `uart_init_flow.html`: Explains the Milestone 1 UART initialization flow.
 - `milestone2_relationships.html`: Explains the Milestone 2 normal/test harness boundary.
 - `milestone4_timer_flow.html`: Explains the Milestone 4 SBI timer interrupt flow.
+- `milestone5a_pmm_flow.html`: Explains the Milestone 5A physical frame allocator flow.
 
 Guidelines:
 
