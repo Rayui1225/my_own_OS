@@ -3,6 +3,7 @@
 use super::frame::{align_up_to_page, MemoryRange};
 
 const USABLE_MEMORY_RANGES: [MemoryRange; 1] = [MemoryRange::new(0x8020_0000, 0x8800_0000)];
+pub const MAX_MANAGED_FRAMES: usize = (0x8800_0000usize - 0x8020_0000usize) / super::frame::PAGE_SIZE;
 
 pub fn usable_memory_ranges() -> &'static [MemoryRange] {
     &USABLE_MEMORY_RANGES

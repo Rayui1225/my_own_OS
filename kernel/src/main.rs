@@ -29,11 +29,15 @@ extern "C" fn kernel_main(_hart_id: usize, _dtb_pa: usize) -> ! {
         println!("[debug] uart ready");
         println!("[debug] trap ready");
         memory::init();
+        println!("[memory] allocator = {}", memory::allocator_name());
         println!("[memory] total usable frames = {}", memory::total_usable_frames());
+        println!("[memory] free frames = {}", memory::free_frame_count());
         if let Some(frame) = memory::alloc_frame() {
             println!("[memory] alloc frame = {:#x}", frame.start_address());
+            println!("[memory] free frames = {}", memory::free_frame_count());
             memory::dealloc_frame(frame);
             println!("[memory] free frame = {:#x}", frame.start_address());
+            println!("[memory] free frames = {}", memory::free_frame_count());
         } else {
             println!("[memory] alloc frame = none");
         }

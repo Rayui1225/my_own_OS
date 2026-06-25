@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Milestone 5B Allocator Strategy</title>
+  <style>
+    :root {
+      --bg: #eef3f7;
+      --panel: #fffdf9;
+      --ink: #172033;
+      --muted: #5d6b7c;
+      --blue: #1d4ed8;
+      --blue-soft: #dbeafe;
+      --green: #047857;
+      --green-soft: #d9f7e8;
+      --rose: #be123c;
+      --rose-soft: #ffe4ea;
+      --line: #cbd5e1;
+      --shadow: 0 18px 36px rgba(23, 32, 51, 0.09);
+      --radius: 22px;
+      --mono-bg: #172033;
+      --mono-ink: #f8efe2;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Georgia, "Noto Serif TC", "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        linear-gradient(135deg, rgba(219, 234, 254, 0.76), transparent 32%),
+        linear-gradient(315deg, rgba(217, 247, 232, 0.76), transparent 34%),
+        var(--bg);
+    }
+
+    .page {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 46px 24px 72px;
+    }
+
+    .hero,
+    .card,
+    .lane,
+    .note {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      padding: 34px;
+      margin-bottom: 26px;
+      background: linear-gradient(135deg, rgba(255, 253, 249, 0.98), rgba(219, 234, 254, 0.66));
+    }
+
+    .eyebrow {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: var(--blue-soft);
+      color: #1d4ed8;
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 14px 0 10px;
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      line-height: 1.05;
+    }
+
+    .subtitle {
+      margin: 0;
+      max-width: 900px;
+      color: var(--muted);
+      font-size: 1.08rem;
+      line-height: 1.78;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(235px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .card,
+    .note {
+      padding: 20px;
+    }
+
+    .section-title,
+    .card h2 {
+      margin: 0 0 10px;
+      color: #1d4ed8;
+      font-size: 1rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .card p,
+    .lane p,
+    .note p,
+    .note li {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.72;
+    }
+
+    .lanes {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 28px;
+    }
+
+    .lane {
+      padding: 24px;
+    }
+
+    .lane h3 {
+      margin: 0 0 10px;
+      font-size: 1.35rem;
+    }
+
+    .code {
+      margin: 14px 0 14px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      color: var(--mono-ink);
+      background: var(--mono-bg);
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: 0.94rem;
+      overflow-x: auto;
+    }
+
+    .stack {
+      display: grid;
+      gap: 8px;
+      margin-top: 16px;
+      font-family: Consolas, "SFMono-Regular", monospace;
+    }
+
+    .stack-cell {
+      padding: 10px 12px;
+      border-radius: 12px;
+      color: #064e3b;
+      background: var(--green-soft);
+      border: 1px solid #9ae6b4;
+    }
+
+    .stack-cell.top {
+      color: #1d4ed8;
+      background: var(--blue-soft);
+      border-color: #93c5fd;
+    }
+
+    .bitmap {
+      display: grid;
+      grid-template-columns: repeat(16, minmax(18px, 1fr));
+      gap: 6px;
+      margin-top: 16px;
+      font-family: Consolas, "SFMono-Regular", monospace;
+    }
+
+    .bit {
+      aspect-ratio: 1;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      font-size: 0.78rem;
+      border: 1px solid #a7b7cc;
+      background: #eef6ff;
+      color: #1d4ed8;
+    }
+
+    .bit.used {
+      border-color: #f0a8b8;
+      background: var(--rose-soft);
+      color: var(--rose);
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+
+    .note ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    .note li + li {
+      margin-top: 10px;
+    }
+
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      margin-top: 14px;
+      color: #1d4ed8;
+      font-weight: 700;
+    }
+
+    .arrow {
+      font-size: 1.18rem;
+    }
+
+    @media (max-width: 900px) {
+      .lanes,
+      .split {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="eyebrow">Milestone 5B</div>
+      <h1>Allocator Strategy: Stack vs Bitmap</h1>
+      <p class="subtitle">
+        This diagram shows how the physical memory manager keeps the same public API while changing
+        the allocator strategy underneath. The stack allocator stores one address per free frame;
+        the bitmap allocator stores one bit per frame and scans for a free bit.
+      </p>
+    </section>
+
+    <section class="cards">
+      <article class="card">
+        <h2>Stable API</h2>
+        <p><code>memory::alloc_frame()</code> and <code>memory::dealloc_frame()</code> stay the same for callers.</p>
+      </article>
+      <article class="card">
+        <h2>Strategy Boundary</h2>
+        <p><code>FrameAllocator</code> defines the common contract for stack and bitmap implementations.</p>
+      </article>
+      <article class="card">
+        <h2>Selected Strategy</h2>
+        <p><code>pmm.rs</code> currently selects <code>BitmapFrameAllocator</code> with a type alias.</p>
+      </article>
+    </section>
+
+    <section class="lanes">
+      <article class="lane">
+        <h3>Stack Allocator</h3>
+        <p>Stores every free frame address in a static array. Allocation pops the top address; free pushes it back.</p>
+        <div class="code">metadata = free frame addresses
+alloc = pop()
+free = push(frame)</div>
+        <div class="stack">
+          <div class="stack-cell top">top -> 0x87fff000</div>
+          <div class="stack-cell">0x87ffe000</div>
+          <div class="stack-cell">0x87ffd000</div>
+          <div class="stack-cell">...</div>
+        </div>
+      </article>
+
+      <article class="lane">
+        <h3>Bitmap Allocator</h3>
+        <p>Stores one bit per frame. A clear bit means free; a set bit means used.</p>
+        <div class="code">0 = free
+1 = used
+alloc = find first 0 bit, then set it
+free = clear the bit</div>
+        <div class="bitmap" aria-label="bitmap visualization">
+          <div class="bit used">1</div>
+          <div class="bit">0</div>
+          <div class="bit">0</div>
+          <div class="bit used">1</div>
+          <div class="bit">0</div>
+          <div class="bit">0</div>
+          <div class="bit">0</div>
+          <div class="bit used">1</div>
+          <div class="bit">0</div>
+          <div class="bit">0</div>
+          <div class="bit">0</div>
+          <div class="bit">0</div>
+          <div class="bit used">1</div>
+          <div class="bit">0</div>
+          <div class="bit">0</div>
+          <div class="bit">0</div>
+        </div>
+      </article>
+    </section>
+
+    <section class="split">
+      <article class="note">
+        <h2 class="section-title">PMM Dispatch</h2>
+        <p>The strategy is selected inside <code>pmm.rs</code>, while callers continue to use the same functions.</p>
+        <div class="code">type SelectedFrameAllocator = BitmapFrameAllocator;
+static mut PMM: SelectedFrameAllocator = SelectedFrameAllocator::new();</div>
+        <div class="flow">
+          <span><code>main.rs</code></span>
+          <span class="arrow">-></span>
+          <span><code>memory::alloc_frame()</code></span>
+          <span class="arrow">-></span>
+          <span><code>PMM.alloc_frame()</code></span>
+          <span class="arrow">-></span>
+          <span><code>bitmap</code></span>
+        </div>
+      </article>
+
+      <article class="note">
+        <h2 class="section-title">Trade-Offs</h2>
+        <ul>
+          <li>Stack metadata costs one address per free frame, so it is simple but larger.</li>
+          <li>Bitmap metadata costs one bit per frame, so it is compact but allocation may scan.</li>
+          <li>The current bitmap implementation manages the first non-empty segment after kernel reservation.</li>
+          <li>Future multi-region memory maps can extend the bitmap strategy without changing the public PMM API.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="note">
+      <h2 class="section-title">Smoke Test Signal</h2>
+      <p>The normal boot path prints the selected allocator and current free count, so allocator behavior is visible from QEMU.</p>
+      <div class="code">[memory] allocator = bitmap
+[memory] total usable frames = ...
+[memory] free frames = ...
+[memory] alloc frame = 0x...
+[memory] free frames = ...
+[memory] free frame = 0x...</div>
+    </section>
+  </main>
+</body>
+</html>

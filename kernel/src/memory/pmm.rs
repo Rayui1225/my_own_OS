@@ -1,105 +1,59 @@
 #![cfg_attr(feature = "test-kernel", allow(dead_code))]
 
 use super::{
-    frame::{Frame, MemoryRange, PhysAddr, PAGE_SIZE},
+    allocator::{bitmap::BitmapFrameAllocator, FrameAllocator},
+    frame::MemoryRange,
     map,
 };
 
-const MAX_FRAMES: usize = (0x8800_0000usize - 0x8020_0000usize) / PAGE_SIZE;
+type SelectedFrameAllocator = BitmapFrameAllocator;
 
-pub trait FrameAllocator {
-    fn alloc_frame(&mut self) -> Option<Frame>;
-    fn dealloc_frame(&mut self, frame: Frame);
-    fn total_usable_frames(&self) -> usize;
-}
-
-pub struct StackFrameAllocator {
-    frames: [PhysAddr; MAX_FRAMES],
-    len: usize,
-    total_usable_frames: usize,
-}
-
-impl StackFrameAllocator {
-    pub const fn new() -> Self {
-        Self {
-            frames: [0; MAX_FRAMES],
-            len: 0,
-            total_usable_frames: 0,
-        }
-    }
-
-    fn reset(&mut self) {
-        self.len = 0;
-        self.total_usable_frames = 0;
-    }
-
-    fn push(&mut self, frame: Frame) {
-        assert!(self.len < self.frames.len(), "frame stack overflow");
-        self.frames[self.len] = frame.start_address();
-        self.len += 1;
-        self.total_usable_frames += 1;
-    }
-
-    fn add_range(&mut self, range: MemoryRange) {
-        let aligned = range.align_inward();
-        let mut current = aligned.start;
-
-        while current < aligned.end {
-            self.push(Frame::from_start_address(current));
-            current += PAGE_SIZE;
-        }
-    }
-}
-
-impl FrameAllocator for StackFrameAllocator {
-    fn alloc_frame(&mut self) -> Option<Frame> {
-        if self.len == 0 {
-            return None;
-        }
-
-        self.len -= 1;
-        Some(Frame::from_start_address(self.frames[self.len]))
-    }
-
-    fn dealloc_frame(&mut self, frame: Frame) {
-        assert!(self.len < self.frames.len(), "frame stack overflow");
-        self.frames[self.len] = frame.start_address();
-        self.len += 1;
-    }
-
-    fn total_usable_frames(&self) -> usize {
-        self.total_usable_frames
-    }
-}
-
-static mut PMM: StackFrameAllocator = StackFrameAllocator::new();
+static mut PMM: SelectedFrameAllocator = SelectedFrameAllocator::new();
 
 pub fn init() {
-    let reserved = map::kernel_reserved_range();
+    let usable_segments = usable_segments_excluding_kernel();
 
     unsafe {
-        PMM.reset();
-
-        for &range in map::usable_memory_ranges() {
-            for segment in subtract_reserved(range, reserved) {
-                if !segment.is_empty() {
-                    PMM.add_range(segment);
-                }
-            }
-        }
+        PMM.init(&usable_segments);
     }
 }
 
-pub fn alloc_frame() -> Option<Frame> {
+pub fn alloc_frame() -> Option<super::Frame> {
     unsafe { PMM.alloc_frame() }
 }
 
-pub fn dealloc_frame(frame: Frame) {
+pub fn dealloc_frame(frame: super::Frame) {
     unsafe { PMM.dealloc_frame(frame) }
 }
 
 pub fn total_usable_frames() -> usize {
     unsafe { PMM.total_usable_frames() }
+}
+
+pub fn free_frame_count() -> usize {
+    unsafe { PMM.free_frame_count() }
+}
+
+pub fn allocator_name() -> &'static str {
+    unsafe { PMM.name() }
+}
+
+fn usable_segments_excluding_kernel() -> [MemoryRange; 2] {
+    let reserved = map::kernel_reserved_range();
+    let mut segments = [MemoryRange::new(0, 0); 2];
+    let mut len = 0;
+
+    for &range in map::usable_memory_ranges() {
+        for segment in subtract_reserved(range, reserved) {
+            if !segment.is_empty() {
+                assert!(len < segments.len(), "too many usable memory segments");
+                segments[len] = segment;
+                len += 1;
+            }
+        }
+    }
+
+    segments
 }
 
 fn subtract_reserved(range: MemoryRange, reserved: MemoryRange) -> [MemoryRange; 2] {
