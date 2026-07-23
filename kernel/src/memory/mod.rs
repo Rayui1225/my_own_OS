@@ -3,6 +3,7 @@
 mod allocator;
 mod frame;
 mod map;
+pub mod paging;
 mod pmm;
 
 pub use frame::{Frame, MemoryRange, PhysAddr, PAGE_SIZE};

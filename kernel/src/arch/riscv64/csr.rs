@@ -58,3 +58,25 @@ pub fn enable_supervisor_timer_interrupt() {
         );
     }
 }
+
+pub fn enable_sv39(root_page_table_paddr: usize) {
+    const SATP_MODE_SV39: usize = 8 << 60;
+    let satp = SATP_MODE_SV39 | (root_page_table_paddr >> 12);
+
+    unsafe {
+        asm!(
+            "csrw satp, {}",
+            in(reg) satp,
+            options(nostack, nomem, preserves_flags)
+        );
+    }
+
+    sfence_vma();
+}
+
+pub fn sfence_vma() {
+    unsafe {
+        // Discard translations that may have been cached before the new page table.
+        asm!("sfence.vma zero, zero", options(nostack, preserves_flags));
+    }
+}
