@@ -2,6 +2,7 @@
 
 mod allocator;
 mod frame;
+pub mod heap;
 mod map;
 pub mod paging;
 mod pmm;

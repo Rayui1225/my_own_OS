@@ -5,6 +5,8 @@ use super::frame::{align_up_to_page, MemoryRange};
 pub const RAM_START: usize = 0x8020_0000;
 pub const RAM_END: usize = 0x8800_0000;
 pub const UART_BASE: usize = 0x1000_0000;
+#[cfg(feature = "test-kernel")]
+pub const QEMU_TEST_FINISHER_BASE: usize = 0x0010_0000;
 
 const USABLE_MEMORY_RANGES: [MemoryRange; 1] = [MemoryRange::new(RAM_START, RAM_END)];
 pub const MAX_MANAGED_FRAMES: usize = (RAM_END - RAM_START) / super::frame::PAGE_SIZE;

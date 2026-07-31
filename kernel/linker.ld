@@ -25,6 +25,7 @@ SECTIONS
     .data : ALIGN(4K) {
         PROVIDE(sdata = .);
         *(.data .data.*)
+        *(.sdata .sdata.*)
         PROVIDE(edata = .);
     }
 
@@ -37,6 +38,7 @@ SECTIONS
     .bss : ALIGN(4K) {
         PROVIDE(sbss = .);
         *(.bss .bss.*)
+        *(.sbss .sbss.*)
         *(COMMON)
         PROVIDE(ebss = .);
     }

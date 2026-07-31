@@ -20,6 +20,8 @@ const PTE_VALID: usize = PteFlags::VALID.bits();
 const PTE_LEAF_MASK: usize =
     PteFlags::READ.bits() | PteFlags::WRITE.bits() | PteFlags::EXECUTE.bits();
 
+static mut KERNEL_PAGE_TABLE: Option<PageTable> = None;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PteFlags(usize);
 
@@ -57,6 +59,7 @@ pub enum MapError {
     MappingConflict,
     OutOfFrames,
     NotMapped,
+    KernelPageTableUnavailable,
 }
 
 pub struct PageTable {
@@ -209,6 +212,15 @@ pub fn init() -> Result<(), MapError> {
         MemoryRange::new(map::UART_BASE, map::UART_BASE + PAGE_SIZE),
         PteFlags::READ | PteFlags::WRITE,
     )?;
+    #[cfg(feature = "test-kernel")]
+    map_identity_range(
+        &mut page_table,
+        MemoryRange::new(
+            map::QEMU_TEST_FINISHER_BASE,
+            map::QEMU_TEST_FINISHER_BASE + PAGE_SIZE,
+        ),
+        PteFlags::READ | PteFlags::WRITE,
+    )?;
 
     let translated = page_table
         .translate_addr(map::RAM_START)
@@ -220,6 +232,27 @@ pub fn init() -> Result<(), MapError> {
     println!("[vm] mmu enabled");
     println!("[vm] translate {:#x} -> {:#x}", map::RAM_START, translated);
 
+    unsafe {
+        // The single kernel mapper remains available for later kernel-only mappings.
+        KERNEL_PAGE_TABLE = Some(page_table);
+    }
+
+    Ok(())
+}
+
+pub fn map_kernel_page(
+    virt: VirtAddr,
+    phys: PhysAddr,
+    flags: PteFlags,
+) -> Result<(), MapError> {
+    unsafe {
+        let page_table = KERNEL_PAGE_TABLE
+            .as_mut()
+            .ok_or(MapError::KernelPageTableUnavailable)?;
+        page_table.map_page(virt, phys, flags)?;
+    }
+
+    csr::sfence_vma();
     Ok(())
 }
 

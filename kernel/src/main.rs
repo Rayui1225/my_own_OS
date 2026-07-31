@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 mod arch;
 mod console;
 mod driver;
@@ -15,6 +17,10 @@ use core::panic::PanicInfo;
 extern "C" fn kernel_main(_hart_id: usize, _dtb_pa: usize) -> ! {
     clear_bss();
     console::init();
+    arch::riscv64::trap::init();
+    memory::init();
+    memory::paging::init().expect("kernel virtual memory initialization failed");
+    memory::heap::init().expect("kernel heap initialization failed");
 
     #[cfg(feature = "test-kernel")]
     {
@@ -23,19 +29,17 @@ extern "C" fn kernel_main(_hart_id: usize, _dtb_pa: usize) -> ! {
 
     #[cfg(not(feature = "test-kernel"))]
     {
-        arch::riscv64::trap::init();
         println!("[boot] kernel entered");
         println!("[boot] arch = riscv64");
         println!("[debug] uart ready");
         println!("[debug] trap ready");
-        memory::init();
         println!("[memory] allocator = {}", memory::allocator_name());
         println!(
             "[memory] total usable frames = {}",
             memory::total_usable_frames()
         );
         println!("[memory] free frames = {}", memory::free_frame_count());
-        memory::paging::init().expect("kernel virtual memory initialization failed");
+        println!("[heap] allocated bytes = {}", memory::heap::allocated_bytes());
         arch::riscv64::boot::wait_forever()
     }
 }
