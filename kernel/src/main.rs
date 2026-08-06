@@ -8,6 +8,7 @@ mod console;
 mod driver;
 mod memory;
 mod panic;
+mod task;
 #[cfg(feature = "test-kernel")]
 mod test;
 
@@ -21,6 +22,7 @@ extern "C" fn kernel_main(_hart_id: usize, _dtb_pa: usize) -> ! {
     memory::init();
     memory::paging::init().expect("kernel virtual memory initialization failed");
     memory::heap::init().expect("kernel heap initialization failed");
+    task::init();
 
     #[cfg(feature = "test-kernel")]
     {
@@ -40,8 +42,30 @@ extern "C" fn kernel_main(_hart_id: usize, _dtb_pa: usize) -> ! {
         );
         println!("[memory] free frames = {}", memory::free_frame_count());
         println!("[heap] allocated bytes = {}", memory::heap::allocated_bytes());
+        let task_one_id: task::TaskId =
+            task::spawn(task_one).expect("failed to create task 1");
+        let task_two_id: task::TaskId =
+            task::spawn(task_two).expect("failed to create task 2");
+        task::run();
+        assert_eq!(task::state(task_one_id), Some(task::TaskState::Exited));
+        assert_eq!(task::state(task_two_id), Some(task::TaskState::Exited));
+        println!("[task] all tasks exited");
         arch::riscv64::boot::wait_forever()
     }
+}
+
+#[cfg(not(feature = "test-kernel"))]
+fn task_one() {
+    println!("[task 1] hello");
+    task::yield_now();
+    println!("[task 1] hello again");
+}
+
+#[cfg(not(feature = "test-kernel"))]
+fn task_two() {
+    println!("[task 2] hello");
+    task::yield_now();
+    println!("[task 2] hello again");
 }
 
 #[panic_handler]

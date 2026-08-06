@@ -1,4 +1,5 @@
 use alloc::{boxed::Box, string::String, vec::Vec};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 #[cfg(feature = "test-kernel")]
 use crate::driver::qemu;
@@ -16,8 +17,44 @@ pub fn run() -> ! {
         heap_box(),
         heap_vec(),
         heap_string(),
+        cooperative_task_switch(),
     ];
     run_tests(&tests)
+}
+
+static TASK_STEP: AtomicUsize = AtomicUsize::new(0);
+
+fn cooperative_task_switch() -> TestCase {
+    TestCase {
+        name: "cooperative_task_switch",
+        run: || {
+            TASK_STEP.store(0, Ordering::SeqCst);
+            let task_one = crate::task::spawn(test_task_one).expect("failed to create test task 1");
+            let task_two = crate::task::spawn(test_task_two).expect("failed to create test task 2");
+            crate::task::run();
+            assert_eq!(TASK_STEP.load(Ordering::SeqCst), 4);
+            assert_eq!(
+                crate::task::state(task_one),
+                Some(crate::task::TaskState::Exited)
+            );
+            assert_eq!(
+                crate::task::state(task_two),
+                Some(crate::task::TaskState::Exited)
+            );
+        },
+    }
+}
+
+fn test_task_one() {
+    assert_eq!(TASK_STEP.fetch_add(1, Ordering::SeqCst), 0);
+    crate::task::yield_now();
+    assert_eq!(TASK_STEP.fetch_add(1, Ordering::SeqCst), 2);
+}
+
+fn test_task_two() {
+    assert_eq!(TASK_STEP.fetch_add(1, Ordering::SeqCst), 1);
+    crate::task::yield_now();
+    assert_eq!(TASK_STEP.fetch_add(1, Ordering::SeqCst), 3);
 }
 
 fn heap_box() -> TestCase {
