@@ -14,6 +14,10 @@ impl TaskId {
     pub const fn new(value: usize) -> Self {
         Self(value)
     }
+
+    pub const fn value(self) -> usize {
+        self.0
+    }
 }
 
 #[allow(dead_code)]
@@ -48,6 +52,19 @@ impl Task {
             context,
             _kernel_stack: kernel_stack,
         }
+    }
+
+    pub fn transition_to(&mut self, next: TaskState) {
+        let is_valid = matches!(
+            (self.state, next),
+            (TaskState::Ready, TaskState::Running)
+                | (TaskState::Running, TaskState::Ready)
+                | (TaskState::Running, TaskState::Blocked)
+                | (TaskState::Running, TaskState::Exited)
+                | (TaskState::Blocked, TaskState::Ready)
+        );
+        assert!(is_valid, "invalid task state transition");
+        self.state = next;
     }
 }
 

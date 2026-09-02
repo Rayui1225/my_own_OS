@@ -2,10 +2,10 @@ use core::arch::asm;
 
 #[cfg_attr(feature = "test-kernel", allow(dead_code))]
 pub fn write_stvec(addr: usize) {
-    let direct_mode_addr = addr & !0b11; // stvec = Base Address + Mode (00 for direct mode 01 for vectored mode)  
-    //Direct mode: all traps set stvec to the same address, and the hardware will jump to that address when a trap occurs. 
-    //Vectored mode: the hardware will jump to an address calculated by adding an offset to the value in stvec. 
-    //The offset is determined by the cause of the trap, allowing for different handlers for different traps.
+    let direct_mode_addr = addr & !0b11; // stvec = Base Address + Mode (00 for direct mode 01 for vectored mode)
+                                         //Direct mode: all traps set stvec to the same address, and the hardware will jump to that address when a trap occurs.
+                                         //Vectored mode: the hardware will jump to an address calculated by adding an offset to the value in stvec.
+                                         //The offset is determined by the cause of the trap, allowing for different handlers for different traps.
 
     unsafe {
         asm!(
@@ -34,8 +34,6 @@ pub fn read_time() -> u64 {
 #[cfg_attr(feature = "test-kernel", allow(dead_code))]
 #[allow(dead_code)]
 pub fn enable_supervisor_interrupts() {
-    const SSTATUS_SIE: usize = 1 << 1;
-
     unsafe {
         asm!(
             "csrs sstatus, {}",
@@ -45,14 +43,37 @@ pub fn enable_supervisor_interrupts() {
     }
 }
 
-#[cfg_attr(feature = "test-kernel", allow(dead_code))]
-#[allow(dead_code)]
-pub fn enable_supervisor_timer_interrupt() {
-    const SIE_STIE: usize = 1 << 5;
+pub fn disable_supervisor_interrupts() -> bool {
+    let previous: usize;
 
     unsafe {
         asm!(
+            "csrrc {}, sstatus, {}",
+            out(reg) previous,
+            in(reg) SSTATUS_SIE,
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+
+    (previous & SSTATUS_SIE) != 0
+}
+
+#[cfg_attr(feature = "test-kernel", allow(dead_code))]
+#[allow(dead_code)]
+pub fn enable_supervisor_timer_interrupt() {
+    unsafe {
+        asm!(
             "csrs sie, {}",
+            in(reg) SIE_STIE,
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+}
+
+pub fn disable_supervisor_timer_interrupt() {
+    unsafe {
+        asm!(
+            "csrc sie, {}",
             in(reg) SIE_STIE,
             options(nomem, nostack, preserves_flags)
         );
@@ -80,3 +101,6 @@ pub fn sfence_vma() {
         asm!("sfence.vma zero, zero", options(nostack, preserves_flags));
     }
 }
+
+const SSTATUS_SIE: usize = 1 << 1;
+const SIE_STIE: usize = 1 << 5;

@@ -1,5 +1,5 @@
 use alloc::{boxed::Box, string::String, vec::Vec};
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 #[cfg(feature = "test-kernel")]
 use crate::driver::qemu;
@@ -17,24 +17,41 @@ pub fn run() -> ! {
         heap_box(),
         heap_vec(),
         heap_string(),
-        cooperative_task_switch(),
+        cooperative_and_preemptive_task_switch(),
     ];
     run_tests(&tests)
 }
 
 static TASK_STEP: AtomicUsize = AtomicUsize::new(0);
+static PREEMPT_RELEASED: AtomicBool = AtomicBool::new(false);
 
-fn cooperative_task_switch() -> TestCase {
+fn cooperative_and_preemptive_task_switch() -> TestCase {
     TestCase {
-        name: "cooperative_task_switch",
+        name: "cooperative_and_preemptive_task_switch",
         run: || {
             TASK_STEP.store(0, Ordering::SeqCst);
+            PREEMPT_RELEASED.store(false, Ordering::Relaxed);
             let task_one = crate::task::spawn(test_task_one).expect("failed to create test task 1");
             let task_two = crate::task::spawn(test_task_two).expect("failed to create test task 2");
+            let preempt_waiter =
+                crate::task::spawn(test_preempt_waiter).expect("failed to create preempt waiter");
+            let preempt_releaser = crate::task::spawn(test_preempt_releaser)
+                .expect("failed to create preempt releaser");
+            crate::arch::riscv64::timer::init();
             crate::task::run();
+            crate::arch::riscv64::timer::stop();
             assert_eq!(TASK_STEP.load(Ordering::SeqCst), 4);
+            assert!(PREEMPT_RELEASED.load(Ordering::Acquire));
             assert_eq!(
                 crate::task::state(task_one),
+                Some(crate::task::TaskState::Exited)
+            );
+            assert_eq!(
+                crate::task::state(preempt_waiter),
+                Some(crate::task::TaskState::Exited)
+            );
+            assert_eq!(
+                crate::task::state(preempt_releaser),
                 Some(crate::task::TaskState::Exited)
             );
             assert_eq!(
@@ -55,6 +72,16 @@ fn test_task_two() {
     assert_eq!(TASK_STEP.fetch_add(1, Ordering::SeqCst), 1);
     crate::task::yield_now();
     assert_eq!(TASK_STEP.fetch_add(1, Ordering::SeqCst), 3);
+}
+
+fn test_preempt_waiter() {
+    while !PREEMPT_RELEASED.load(Ordering::Acquire) {
+        core::hint::spin_loop();
+    }
+}
+
+fn test_preempt_releaser() {
+    PREEMPT_RELEASED.store(true, Ordering::Release);
 }
 
 fn heap_box() -> TestCase {
