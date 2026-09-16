@@ -2,10 +2,12 @@ mod registry;
 mod scheduler;
 mod thread;
 
-pub(crate) use scheduler::on_timer_tick;
-pub use scheduler::{init, run, spawn, state};
+#[cfg(feature = "test-kernel")]
+pub use scheduler::exit_code;
 #[cfg_attr(not(feature = "test-kernel"), allow(unused_imports))]
 pub use scheduler::yield_now;
+pub(crate) use scheduler::{current_id, exit_current, on_timer_tick};
+pub use scheduler::{init, run, spawn, state};
 #[cfg_attr(feature = "test-kernel", allow(unused_imports))]
 pub use thread::TaskId;
 pub use thread::TaskState;
@@ -18,5 +20,5 @@ extern "C" fn task_entry_rust(entry_address: usize) -> ! {
     crate::arch::riscv64::csr::enable_supervisor_interrupts();
     let entry: TaskEntry = unsafe { core::mem::transmute(entry_address) };
     entry();
-    scheduler::exit_current()
+    exit_current(0)
 }

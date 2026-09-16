@@ -8,6 +8,7 @@ mod console;
 mod driver;
 mod memory;
 mod panic;
+mod syscall;
 mod task;
 #[cfg(feature = "test-kernel")]
 mod test;

@@ -10,6 +10,10 @@ pub fn print(args: fmt::Arguments<'_>) {
     let _ = Console.write_fmt(args);
 }
 
+pub fn write_byte(byte: u8) {
+    uart::write_byte(byte);
+}
+
 struct Console;
 
 impl Write for Console {

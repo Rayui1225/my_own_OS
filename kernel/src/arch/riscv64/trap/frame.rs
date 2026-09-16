@@ -1,5 +1,6 @@
 const INTERRUPT_BIT: usize = 1usize << (usize::BITS - 1);
 
+#[derive(Default)]
 #[repr(C)]
 pub struct TrapFrame {
     pub ra: usize,
@@ -85,8 +86,12 @@ impl TrapCause {
             Self::StorePageFault => "store page fault",
             Self::UserEcall => "ecall from user mode",
             Self::SupervisorTimerInterrupt => "timer interrupt",
-            Self::Unknown { interrupt: true, .. } => "unknown interrupt",
-            Self::Unknown { interrupt: false, .. } => "unknown exception",
+            Self::Unknown {
+                interrupt: true, ..
+            } => "unknown interrupt",
+            Self::Unknown {
+                interrupt: false, ..
+            } => "unknown exception",
         }
     }
 }

@@ -44,10 +44,12 @@ extern "C" fn trap_entry_rust(frame: &mut TrapFrame) {
         TrapCause::SupervisorTimerInterrupt => {
             timer::handle_interrupt();
         }
+        TrapCause::UserEcall => {
+            crate::syscall::handle(frame);
+        }
         TrapCause::IllegalInstruction
         | TrapCause::LoadPageFault
         | TrapCause::StorePageFault
-        | TrapCause::UserEcall
         | TrapCause::Unknown { .. } => {
             log_trap(frame);
             panic!("unhandled trap");

@@ -32,6 +32,7 @@ pub enum TaskState {
 pub(super) struct Task {
     pub id: TaskId,
     pub state: TaskState,
+    pub exit_code: Option<i32>,
     pub context: Context,
     _kernel_stack: KernelStack,
 }
@@ -49,6 +50,7 @@ impl Task {
         Self {
             id,
             state: TaskState::Ready,
+            exit_code: None,
             context,
             _kernel_stack: kernel_stack,
         }

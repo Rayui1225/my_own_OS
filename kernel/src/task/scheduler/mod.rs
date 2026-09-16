@@ -64,6 +64,11 @@ impl Scheduler {
         self.tasks.get(id).map(|task| task.state)
     }
 
+    #[cfg(feature = "test-kernel")]
+    fn exit_code(&self, id: TaskId) -> Option<i32> {
+        self.tasks.get(id).and_then(|task| task.exit_code)
+    }
+
     fn first_switch(&mut self) -> Option<(*mut Context, *const Context)> {
         if self.started {
             return None;
@@ -108,9 +113,11 @@ impl Scheduler {
         })
     }
 
-    fn exit_switch(&mut self) -> (*mut Context, *const Context) {
+    fn exit_switch(&mut self, code: i32) -> (*mut Context, *const Context) {
         let current = self.current.expect("no running task to exit");
-        self.task_mut(current).transition_to(TaskState::Exited);
+        let current_task = self.task_mut(current);
+        current_task.exit_code = Some(code);
+        current_task.transition_to(TaskState::Exited);
 
         let next = self.ready_queue.pop_front();
         let current_context = &mut self.task_mut(current).context as *mut Context;
@@ -182,6 +189,21 @@ pub fn state(id: TaskId) -> Option<TaskState> {
     unsafe { SCHEDULER.as_ref().and_then(|scheduler| scheduler.state(id)) }
 }
 
+#[cfg(feature = "test-kernel")]
+pub fn exit_code(id: TaskId) -> Option<i32> {
+    let _interrupt_guard = InterruptGuard::new();
+    unsafe {
+        SCHEDULER
+            .as_ref()
+            .and_then(|scheduler| scheduler.exit_code(id))
+    }
+}
+
+pub(crate) fn current_id() -> Option<TaskId> {
+    let _interrupt_guard = InterruptGuard::new();
+    unsafe { SCHEDULER.as_ref().and_then(|scheduler| scheduler.current) }
+}
+
 pub fn run() {
     let _interrupt_guard = InterruptGuard::new();
     let switch = unsafe { SCHEDULER.as_mut().and_then(Scheduler::first_switch) };
@@ -217,13 +239,13 @@ pub(crate) fn on_timer_tick() {
     }
 }
 
-pub(super) fn exit_current() -> ! {
+pub(crate) fn exit_current(code: i32) -> ! {
     let _interrupt_guard = InterruptGuard::new();
     let (current, next) = unsafe {
         SCHEDULER
             .as_mut()
             .expect("scheduler is not initialized")
-            .exit_switch()
+            .exit_switch(code)
     };
 
     unsafe { context_switch::switch_context(current, next) };

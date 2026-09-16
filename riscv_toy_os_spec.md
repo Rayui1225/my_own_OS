@@ -749,11 +749,13 @@ Exited
 
 ---
 
-## Milestone 10：Syscall Interface
+## Milestone 10：Syscall ABI / Kernel Dispatcher
 
 ### 目標
 
-讓 userspace 可以透過 syscall 呼叫 kernel。
+先建立穩定的 syscall ABI 與 kernel dispatcher，讓 syscall 邏輯不依賴尚未完成的 user address space。
+
+本階段使用 kernel 內建立的 `TrapFrame` 與受控記憶體來源測試 syscall；真正從 U-mode 執行 `ecall` 並返回 userspace，留到 Milestone 11 驗收。
 
 ### 功能需求
 
@@ -766,39 +768,67 @@ sys_yield()
 sys_getpid()
 ```
 
-Syscall flow：
+定義 RISC-V syscall ABI：
 
 ```text
-userspace program
-  -> ecall
-  -> trap handler
+a7       = syscall number
+a0 - a5  = arguments
+a0       = return value
+error    = negative errno encoded in a0
+```
+
+Kernel syscall flow：
+
+```text
+TrapFrame
+  -> UserEcall trap handler
   -> syscall dispatcher
   -> kernel service
-  -> return to userspace
+  -> write return value into TrapFrame.a0
 ```
+
+支援：
+
+- `UserEcall` 交給 syscall dispatcher，並將 `sepc` 前進 4 bytes。
+- `sys_write` 僅接受 stdout / stderr，並透過 `UserMemory` 邊界讀取資料。
+- `sys_exit` 記錄 exit code，將目前 task 轉為 `Exited`。
+- `sys_yield` 主動讓出 CPU。
+- `sys_getpid` 暫時以 `TaskId` 作為 PID；process / thread 分離後再替換。
+- 未知 syscall 回傳 `-ENOSYS`，無效 fd 回傳 `-EBADF`，無效位址回傳 `-EFAULT`。
+
+`UserMemory` 是 syscall 與 user address space 的架構邊界。Milestone 10 使用受控的 slice 實作驗證 dispatcher；一般 kernel 尚未有 user page table，因此不直接解參考 userspace pointer。
 
 ### 驗收標準
 
-Userspace 呼叫：
+Test kernel 建立合成的 `TrapFrame`，依序驗證：
 
 ```text
-write(1, "hello from user\n")
-exit(0)
+sys_write success
+sys_write invalid fd -> -EBADF
+sys_write invalid pointer -> -EFAULT
+unknown syscall -> -ENOSYS
+sys_getpid returns current TaskId
+sys_yield resumes with 0
+sys_exit stores exit code and never returns
 ```
 
-Kernel 輸出：
+代表性輸出：
 
 ```text
-[user] hello from user
-[process] pid=1 exited with code 0
+[user] hello from syscall test
+[process] pid=<task-id> exited with code 7
 ```
+
+此階段不宣稱已完成真正的 userspace syscall；端到端的 `U-mode -> ecall -> kernel -> sret` 由 Milestone 11 完成。
 
 ### Agent 討論重點
 
 - syscall number 放在哪個 register？
 - argument 放哪些 register？
 - return value 放哪個 register？
-- userspace pointer 如何檢查？
+- errno 如何編碼？
+- syscall dispatcher 要不要直接解參考 userspace pointer？
+- 在還沒有 user page table 時，如何測試 syscall 邏輯？
 
 ---
 
@@ -828,6 +858,9 @@ page table
 - 設定 user entry point。
 - 切換到 user mode。
 - user trap 回 kernel。
+- 用 page table 實作 `UserMemory` / `copy_from_user`，檢查 userspace pointer。
+- 將真實 `UserEcall` 接到 Milestone 10 的 syscall dispatcher。
+- 執行最小 user program，呼叫 `write`、`getpid`、`yield`、`exit`。
 - process exit 後釋放資源。
 
 ### 驗收標準
@@ -835,8 +868,8 @@ page table
 ```text
 [process] loading init
 [process] switch to user mode
-[user] hello
-[process] init exited
+[user] hello from user
+[process] pid=1 exited with code 0
 ```
 
 ### Agent 討論重點
@@ -844,6 +877,7 @@ page table
 - kernel 和 user address space 要不要共用 high mapping？
 - user stack 放哪裡？
 - 從 kernel return to user 的 CSR 要怎麼設定？
+- userspace pointer 如何根據 PTE 權限逐頁檢查？
 - process 結束後 page table 如何釋放？
 
 ---
@@ -1212,4 +1246,3 @@ Allocator: bump allocator first, linked-list or slab later
 ```text
 先讓 OS 從 boot 到 shell 跑通，再回頭優化每一層。
 ```
-

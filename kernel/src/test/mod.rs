@@ -24,6 +24,7 @@ pub fn run() -> ! {
 
 static TASK_STEP: AtomicUsize = AtomicUsize::new(0);
 static PREEMPT_RELEASED: AtomicBool = AtomicBool::new(false);
+static SYSCALL_PID: AtomicUsize = AtomicUsize::new(0);
 
 fn cooperative_and_preemptive_task_switch() -> TestCase {
     TestCase {
@@ -31,12 +32,15 @@ fn cooperative_and_preemptive_task_switch() -> TestCase {
         run: || {
             TASK_STEP.store(0, Ordering::SeqCst);
             PREEMPT_RELEASED.store(false, Ordering::Relaxed);
+            SYSCALL_PID.store(0, Ordering::Relaxed);
             let task_one = crate::task::spawn(test_task_one).expect("failed to create test task 1");
             let task_two = crate::task::spawn(test_task_two).expect("failed to create test task 2");
             let preempt_waiter =
                 crate::task::spawn(test_preempt_waiter).expect("failed to create preempt waiter");
             let preempt_releaser = crate::task::spawn(test_preempt_releaser)
                 .expect("failed to create preempt releaser");
+            let syscall_task =
+                crate::task::spawn(test_syscalls).expect("failed to create syscall task");
             crate::arch::riscv64::timer::init();
             crate::task::run();
             crate::arch::riscv64::timer::stop();
@@ -58,6 +62,8 @@ fn cooperative_and_preemptive_task_switch() -> TestCase {
                 crate::task::state(task_two),
                 Some(crate::task::TaskState::Exited)
             );
+            assert_eq!(SYSCALL_PID.load(Ordering::Relaxed), syscall_task.value());
+            assert_eq!(crate::task::exit_code(syscall_task), Some(7));
         },
     }
 }
@@ -82,6 +88,57 @@ fn test_preempt_waiter() {
 
 fn test_preempt_releaser() {
     PREEMPT_RELEASED.store(true, Ordering::Release);
+}
+
+fn test_syscalls() {
+    const USER_BUFFER: usize = 0x1000;
+    const MESSAGE: &[u8] = b"[user] hello from syscall test\n";
+
+    let memory = crate::syscall::SliceUserMemory::new(USER_BUFFER, MESSAGE);
+    let mut frame = crate::arch::riscv64::trap::TrapFrame {
+        sepc: 0x2000,
+        ..Default::default()
+    };
+
+    frame.a7 = crate::syscall::SYS_WRITE;
+    frame.a0 = 1;
+    frame.a1 = USER_BUFFER;
+    frame.a2 = MESSAGE.len();
+    crate::syscall::handle_with_memory(&mut frame, &memory);
+    assert_eq!(frame.a0, MESSAGE.len());
+    assert_eq!(frame.sepc, 0x2004);
+
+    frame.a7 = crate::syscall::SYS_WRITE;
+    frame.a0 = 99;
+    crate::syscall::handle_with_memory(&mut frame, &memory);
+    assert_eq!(
+        frame.a0 as isize,
+        -(crate::syscall::Errno::BadFileDescriptor as isize)
+    );
+
+    frame.a7 = crate::syscall::SYS_WRITE;
+    frame.a0 = 1;
+    frame.a1 = USER_BUFFER + MESSAGE.len();
+    frame.a2 = 1;
+    crate::syscall::handle_with_memory(&mut frame, &memory);
+    assert_eq!(frame.a0 as isize, -(crate::syscall::Errno::Fault as isize));
+
+    frame.a7 = usize::MAX;
+    crate::syscall::handle_with_memory(&mut frame, &memory);
+    assert_eq!(frame.a0 as isize, -(crate::syscall::Errno::NoSys as isize));
+
+    frame.a7 = crate::syscall::SYS_GETPID;
+    crate::syscall::handle_with_memory(&mut frame, &memory);
+    SYSCALL_PID.store(frame.a0, Ordering::Relaxed);
+
+    frame.a7 = crate::syscall::SYS_YIELD;
+    crate::syscall::handle_with_memory(&mut frame, &memory);
+    assert_eq!(frame.a0, 0);
+
+    frame.a7 = crate::syscall::SYS_EXIT;
+    frame.a0 = 7;
+    crate::syscall::handle_with_memory(&mut frame, &memory);
+    unreachable!("sys_exit returned");
 }
 
 fn heap_box() -> TestCase {
