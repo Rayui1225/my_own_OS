@@ -843,12 +843,13 @@ sys_exit stores exit code and never returns
 每個 process 擁有：
 
 ```text
-user code region
-user data region
+user code / read-only data region
 user stack
 trap frame
 page table
 ```
+
+Milestone 11 先執行一個內嵌於 kernel 的固定 init image；可載入的 writable data region 與一般化 program layout 由 Milestone 12 loader 補上。
 
 支援：
 
@@ -863,6 +864,41 @@ page table
 - 執行最小 user program，呼叫 `write`、`getpid`、`yield`、`exit`。
 - process exit 後釋放資源。
 
+### 實作順序
+
+```text
+11A  User Address Space
+     -> 建立 process page table
+     -> map RXU code page 與 RWU stack page
+     -> 保留 unmapped stack guard page
+     -> kernel mapping 保持 supervisor-only
+
+11B  User / Kernel Transition
+     -> sscratch 保存 user task 的 kernel sp
+     -> U-mode trap 切換到 kernel stack
+     -> 準備 sepc / sstatus / user sp
+     -> 使用 sret 進入或返回 U-mode
+
+11C  Real Syscall Path
+     -> 執行 position-independent init assembly
+     -> 真正呼叫 write / getpid / yield / exit
+     -> 透過 PTE 的 VALID + USER + READ 驗證 user pointer
+
+11D  Deferred Reaping
+     -> sys_exit 只將 task 標記為 Exited
+     -> 切回 bootstrap 與 kernel page table
+     -> 釋放 user code、stack 與私有 page-table frames
+```
+
+### 架構決策
+
+- M11 不同時重構 higher-half kernel；user page table 沿用目前 kernel virtual mapping，但 kernel PTE 不設定 `USER`。
+- root entry zero 保持 process 私有，避免低位 user mapping 與 UART MMIO mapping 汙染 kernel page table；其餘不衝突的 kernel subtree 可以共享。
+- user code 起點固定為 `0x0001_0000`；user stack top 固定為 `0x4000_0000`，其下配置一頁 stack 並保留一頁 guard page。
+- 在 U-mode 時 `sscratch` 保存 kernel stack pointer；在 S-mode 時 `sscratch` 必須為零。
+- process page table 的回收不能在 `sys_exit` 當下進行，因為 CPU 仍在使用該 address space 與 kernel stack。
+- M11 僅排程一個 user process；多 process 切換時的 `satp` 管理留待 process scheduler 擴充。
+
 ### 驗收標準
 
 ```text
@@ -871,6 +907,18 @@ page table
 [user] hello from user
 [process] pid=1 exited with code 0
 ```
+
+init image 會自行檢查：
+
+```text
+sys_write returns the written length
+kernel-only pointer -> -EFAULT
+sys_getpid -> 1
+sys_yield -> 0
+sys_exit -> 0
+```
+
+Test kernel 另外驗證 address space 建立後只有 `USER|READ` mapping 可被 `UserMemory` 讀取，並確認銷毀後 PMM free-frame count 回到原值；最後重設已停止的測試 scheduler，實際執行一次完整 U-mode init process，讓自動測試涵蓋真實 `ecall` 路徑。
 
 ### Agent 討論重點
 

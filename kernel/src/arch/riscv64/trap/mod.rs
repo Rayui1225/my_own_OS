@@ -11,11 +11,14 @@ global_asm!(include_str!("entry.S"));
 
 extern "C" {
     static __trap_entry: u8;
+    fn __enter_user(frame: *const TrapFrame) -> !;
 }
 
 #[cfg_attr(feature = "test-kernel", allow(dead_code))]
 pub fn init() {
     let trap_entry = unsafe { core::ptr::addr_of!(__trap_entry) as usize };
+    // Supervisor mode uses zero; U-mode temporarily stores its kernel sp here.
+    csr::write_sscratch(0);
     csr::write_stvec(trap_entry);
 }
 
@@ -31,6 +34,15 @@ pub fn trigger_illegal_instruction() {
     unsafe {
         asm!(".4byte 0xffffffff", options(nomem, nostack));
     }
+}
+
+/// Restores a user TrapFrame and leaves supervisor mode with `sret`.
+///
+/// # Safety
+///
+/// The frame must contain canonical mapped user addresses and a user-mode sstatus.
+pub unsafe fn enter_user(frame: &TrapFrame) -> ! {
+    __enter_user(frame)
 }
 
 #[no_mangle]

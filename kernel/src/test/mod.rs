@@ -17,9 +17,55 @@ pub fn run() -> ! {
         heap_box(),
         heap_vec(),
         heap_string(),
+        user_address_space(),
         cooperative_and_preemptive_task_switch(),
+        user_mode_syscalls(),
     ];
     run_tests(&tests)
+}
+
+fn user_address_space() -> TestCase {
+    TestCase {
+        name: "user_address_space",
+        run: || {
+            const IMAGE: &[u8] = &[0x13, 0x00, 0x00, 0x00];
+
+            let free_before = crate::memory::free_frame_count();
+            let address_space = crate::memory::address_space::AddressSpace::new(IMAGE)
+                .expect("failed to create test user address space");
+            assert_eq!(
+                address_space.read_user_byte(crate::memory::address_space::USER_CODE_BASE),
+                Some(IMAGE[0])
+            );
+            assert_eq!(address_space.read_user_byte(0x8020_0000), None);
+            address_space.destroy();
+            assert_eq!(crate::memory::free_frame_count(), free_before);
+        },
+    }
+}
+
+fn user_mode_syscalls() -> TestCase {
+    TestCase {
+        name: "user_mode_syscalls",
+        run: || {
+            crate::task::reset_for_test();
+            crate::task::init();
+
+            let free_before = crate::memory::free_frame_count();
+            println!("[process] loading init");
+            let init_task = crate::process::spawn_init().expect("failed to create init process");
+            crate::arch::riscv64::timer::init();
+            crate::task::run();
+            crate::arch::riscv64::timer::stop();
+
+            assert_eq!(
+                crate::task::state(init_task),
+                Some(crate::task::TaskState::Exited)
+            );
+            assert_eq!(crate::process::reap_init(), Ok(0));
+            assert_eq!(crate::memory::free_frame_count(), free_before);
+        },
+    }
 }
 
 static TASK_STEP: AtomicUsize = AtomicUsize::new(0);

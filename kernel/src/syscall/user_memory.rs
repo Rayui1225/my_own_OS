@@ -7,11 +7,11 @@ pub trait UserMemory {
     fn read_byte(&self, address: usize) -> Result<u8, UserMemoryError>;
 }
 
-pub struct UnavailableUserMemory;
+pub struct CurrentUserMemory;
 
-impl UserMemory for UnavailableUserMemory {
-    fn read_byte(&self, _address: usize) -> Result<u8, UserMemoryError> {
-        Err(UserMemoryError::InvalidAddress)
+impl UserMemory for CurrentUserMemory {
+    fn read_byte(&self, address: usize) -> Result<u8, UserMemoryError> {
+        crate::process::read_current_user_byte(address).ok_or(UserMemoryError::InvalidAddress)
     }
 }
 

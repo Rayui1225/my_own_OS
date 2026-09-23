@@ -10,7 +10,7 @@ use abi::{encode_result, SyscallNumber, SyscallRequest};
 pub(crate) use abi::{SYS_EXIT, SYS_GETPID, SYS_WRITE, SYS_YIELD};
 #[cfg(feature = "test-kernel")]
 pub(crate) use user_memory::SliceUserMemory;
-use user_memory::{UnavailableUserMemory, UserMemory};
+use user_memory::{CurrentUserMemory, UserMemory};
 
 const STDOUT: usize = 1;
 const STDERR: usize = 2;
@@ -21,7 +21,7 @@ enum SyscallOutcome {
 }
 
 pub fn handle(frame: &mut TrapFrame) {
-    handle_with_memory(frame, &UnavailableUserMemory);
+    handle_with_memory(frame, &CurrentUserMemory);
 }
 
 pub(crate) fn handle_with_memory<M: UserMemory>(frame: &mut TrapFrame, memory: &M) {

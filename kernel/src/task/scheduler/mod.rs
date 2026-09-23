@@ -64,7 +64,6 @@ impl Scheduler {
         self.tasks.get(id).map(|task| task.state)
     }
 
-    #[cfg(feature = "test-kernel")]
     fn exit_code(&self, id: TaskId) -> Option<i32> {
         self.tasks.get(id).and_then(|task| task.exit_code)
     }
@@ -174,6 +173,20 @@ pub fn init() {
     }
 }
 
+#[cfg(feature = "test-kernel")]
+pub(crate) fn reset_for_test() {
+    let _interrupt_guard = InterruptGuard::new();
+    unsafe {
+        if let Some(scheduler) = SCHEDULER.as_ref() {
+            assert!(
+                scheduler.current.is_none(),
+                "cannot reset a running scheduler"
+            );
+        }
+        SCHEDULER = None;
+    }
+}
+
 pub fn spawn(entry: TaskEntry) -> Result<TaskId, SpawnError> {
     let _interrupt_guard = InterruptGuard::new();
     unsafe {
@@ -189,8 +202,7 @@ pub fn state(id: TaskId) -> Option<TaskState> {
     unsafe { SCHEDULER.as_ref().and_then(|scheduler| scheduler.state(id)) }
 }
 
-#[cfg(feature = "test-kernel")]
-pub fn exit_code(id: TaskId) -> Option<i32> {
+pub(crate) fn exit_code(id: TaskId) -> Option<i32> {
     let _interrupt_guard = InterruptGuard::new();
     unsafe {
         SCHEDULER

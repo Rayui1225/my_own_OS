@@ -1,5 +1,6 @@
 #![allow(unused_imports)]
 
+pub mod address_space;
 mod allocator;
 mod frame;
 pub mod heap;

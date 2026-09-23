@@ -8,6 +8,7 @@ mod console;
 mod driver;
 mod memory;
 mod panic;
+mod process;
 mod syscall;
 mod task;
 #[cfg(feature = "test-kernel")]
@@ -46,45 +47,17 @@ extern "C" fn kernel_main(_hart_id: usize, _dtb_pa: usize) -> ! {
             "[heap] allocated bytes = {}",
             memory::heap::allocated_bytes()
         );
-        let task_one_id: task::TaskId = task::spawn(task_one).expect("failed to create task 1");
-        let task_two_id: task::TaskId = task::spawn(task_two).expect("failed to create task 2");
-        let task_three_id: task::TaskId = task::spawn(task_three).expect("failed to create task 3");
+        let free_frames_before_process = memory::free_frame_count();
+        println!("[process] loading init");
+        let init_task = process::spawn_init().expect("failed to create init process");
         arch::riscv64::timer::init();
         task::run();
         arch::riscv64::timer::stop();
-        assert_eq!(task::state(task_one_id), Some(task::TaskState::Exited));
-        assert_eq!(task::state(task_two_id), Some(task::TaskState::Exited));
-        assert_eq!(task::state(task_three_id), Some(task::TaskState::Exited));
-        println!("[task] all tasks exited");
+        assert_eq!(task::state(init_task), Some(task::TaskState::Exited));
+        assert_eq!(process::reap_init(), Ok(0));
+        assert_eq!(memory::free_frame_count(), free_frames_before_process);
         arch::riscv64::boot::wait_forever()
     }
-}
-
-#[cfg(not(feature = "test-kernel"))]
-fn task_one() {
-    run_cpu_bound_task(1);
-}
-
-#[cfg(not(feature = "test-kernel"))]
-fn task_two() {
-    run_cpu_bound_task(2);
-}
-
-#[cfg(not(feature = "test-kernel"))]
-fn task_three() {
-    run_cpu_bound_task(3);
-}
-
-#[cfg(not(feature = "test-kernel"))]
-fn run_cpu_bound_task(id: usize) {
-    const RUN_TICKS: usize = 2;
-
-    println!("[task {}] started", id);
-    let start = arch::riscv64::timer::ticks();
-    while arch::riscv64::timer::ticks().wrapping_sub(start) < RUN_TICKS {
-        core::hint::spin_loop();
-    }
-    println!("[task {}] finished", id);
 }
 
 #[panic_handler]

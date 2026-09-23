@@ -42,6 +42,10 @@ impl PteFlags {
     const fn is_leaf(self) -> bool {
         self.0 & PTE_LEAF_MASK != 0
     }
+
+    const fn contains(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
+    }
 }
 
 impl core::ops::BitOr for PteFlags {
@@ -74,6 +78,43 @@ impl PageTable {
 
     pub fn root_paddr(&self) -> PhysAddr {
         self.root.start_address()
+    }
+
+    pub fn new_user() -> Result<Self, MapError> {
+        let mut page_table = Self::new()?;
+        let kernel_page_table = unsafe {
+            KERNEL_PAGE_TABLE
+                .as_ref()
+                .ok_or(MapError::KernelPageTableUnavailable)?
+        };
+
+        // Root entry zero stays private because it contains both low user mappings and MMIO.
+        // The remaining kernel subtrees are supervisor-only and can be shared read-only.
+        for index in 1..ENTRIES_PER_TABLE {
+            let source = unsafe { table_entry_ptr(kernel_page_table.root_paddr(), index) };
+            let destination = unsafe { table_entry_ptr(page_table.root_paddr(), index) };
+            unsafe { write_volatile(destination, read_volatile(source)) };
+        }
+
+        let device_mapping = page_table.map_page(
+            map::UART_BASE,
+            map::UART_BASE,
+            PteFlags::READ | PteFlags::WRITE,
+        );
+        #[cfg(feature = "test-kernel")]
+        let device_mapping = device_mapping.and_then(|_| {
+            page_table.map_page(
+                map::QEMU_TEST_FINISHER_BASE,
+                map::QEMU_TEST_FINISHER_BASE,
+                PteFlags::READ | PteFlags::WRITE,
+            )
+        });
+        if let Err(error) = device_mapping {
+            page_table.destroy_user();
+            return Err(error);
+        }
+
+        Ok(page_table)
     }
 
     pub fn map_page(
@@ -120,6 +161,37 @@ impl PageTable {
     }
 
     pub fn translate_addr(&self, virt: VirtAddr) -> Option<PhysAddr> {
+        let entry = self.leaf_entry(virt)?;
+        Some(ppn_to_phys(entry) | (virt & (PAGE_SIZE - 1)))
+    }
+
+    pub fn translate_user_readable(&self, virt: VirtAddr) -> Option<PhysAddr> {
+        let entry = self.leaf_entry(virt)?;
+        let flags = PteFlags(entry);
+        if !flags.contains(PteFlags::USER) || !flags.contains(PteFlags::READ) {
+            return None;
+        }
+
+        Some(ppn_to_phys(entry) | (virt & (PAGE_SIZE - 1)))
+    }
+
+    pub fn activate(&self) {
+        csr::enable_sv39(self.root_paddr());
+    }
+
+    pub fn destroy_user(self) {
+        unsafe {
+            let root_entry = table_entry_ptr(self.root_paddr(), 0);
+            let value = read_volatile(root_entry);
+            if value & PTE_VALID != 0 && !PteFlags(value).is_leaf() {
+                let child = Frame::from_start_address(ppn_to_phys(value));
+                dealloc_private_subtree(child, SV39_LEVELS - 2);
+            }
+        }
+        super::dealloc_frame(self.root);
+    }
+
+    fn leaf_entry(&self, virt: VirtAddr) -> Option<usize> {
         if !is_sv39_address(virt) {
             return None;
         }
@@ -130,7 +202,7 @@ impl PageTable {
             return None;
         }
 
-        Some(ppn_to_phys(entry) | (virt & (PAGE_SIZE - 1)))
+        Some(entry)
     }
 
     fn find_or_create_leaf_entry(&mut self, virt: VirtAddr) -> Result<*mut usize, MapError> {
@@ -240,11 +312,7 @@ pub fn init() -> Result<(), MapError> {
     Ok(())
 }
 
-pub fn map_kernel_page(
-    virt: VirtAddr,
-    phys: PhysAddr,
-    flags: PteFlags,
-) -> Result<(), MapError> {
+pub fn map_kernel_page(virt: VirtAddr, phys: PhysAddr, flags: PteFlags) -> Result<(), MapError> {
     unsafe {
         let page_table = KERNEL_PAGE_TABLE
             .as_mut()
@@ -253,6 +321,16 @@ pub fn map_kernel_page(
     }
 
     csr::sfence_vma();
+    Ok(())
+}
+
+pub fn activate_kernel_page_table() -> Result<(), MapError> {
+    let page_table = unsafe {
+        KERNEL_PAGE_TABLE
+            .as_ref()
+            .ok_or(MapError::KernelPageTableUnavailable)?
+    };
+    page_table.activate();
     Ok(())
 }
 
@@ -306,4 +384,18 @@ fn ppn_to_phys(entry: usize) -> PhysAddr {
 unsafe fn table_entry_ptr(table_paddr: PhysAddr, index: usize) -> *mut usize {
     debug_assert!(index < ENTRIES_PER_TABLE);
     (table_paddr as *mut usize).add(index)
+}
+
+unsafe fn dealloc_private_subtree(table: Frame, level: usize) {
+    let table_paddr = table.start_address();
+    if level > 0 {
+        for index in 0..ENTRIES_PER_TABLE {
+            let value = read_volatile(table_entry_ptr(table_paddr, index));
+            if value & PTE_VALID != 0 && !PteFlags(value).is_leaf() {
+                let child = Frame::from_start_address(ppn_to_phys(value));
+                dealloc_private_subtree(child, level - 1);
+            }
+        }
+    }
+    super::dealloc_frame(table);
 }

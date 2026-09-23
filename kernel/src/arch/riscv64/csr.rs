@@ -16,6 +16,16 @@ pub fn write_stvec(addr: usize) {
     }
 }
 
+pub fn write_sscratch(value: usize) {
+    unsafe {
+        asm!(
+            "csrw sscratch, {}",
+            in(reg) value,
+            options(nostack, nomem, preserves_flags)
+        );
+    }
+}
+
 #[cfg_attr(feature = "test-kernel", allow(dead_code))]
 pub fn read_time() -> u64 {
     let value: u64;
@@ -56,6 +66,22 @@ pub fn disable_supervisor_interrupts() -> bool {
     }
 
     (previous & SSTATUS_SIE) != 0
+}
+
+pub fn user_sstatus() -> usize {
+    const SSTATUS_SPIE: usize = 1 << 5;
+    const SSTATUS_SPP: usize = 1 << 8;
+
+    let current: usize;
+    unsafe {
+        asm!(
+            "csrr {}, sstatus",
+            out(reg) current,
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+
+    (current | SSTATUS_SPIE) & !(SSTATUS_SIE | SSTATUS_SPP)
 }
 
 #[cfg_attr(feature = "test-kernel", allow(dead_code))]
@@ -99,6 +125,13 @@ pub fn sfence_vma() {
     unsafe {
         // Discard translations that may have been cached before the new page table.
         asm!("sfence.vma zero, zero", options(nostack, preserves_flags));
+    }
+}
+
+pub fn fence_i() {
+    unsafe {
+        // Make freshly copied user instructions visible to instruction fetch.
+        asm!("fence.i", options(nostack, preserves_flags));
     }
 }
 

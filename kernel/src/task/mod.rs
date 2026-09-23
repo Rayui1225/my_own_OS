@@ -2,8 +2,9 @@ mod registry;
 mod scheduler;
 mod thread;
 
+pub(crate) use scheduler::exit_code;
 #[cfg(feature = "test-kernel")]
-pub use scheduler::exit_code;
+pub(crate) use scheduler::reset_for_test;
 #[cfg_attr(not(feature = "test-kernel"), allow(unused_imports))]
 pub use scheduler::yield_now;
 pub(crate) use scheduler::{current_id, exit_current, on_timer_tick};
