@@ -8,7 +8,7 @@ mod map;
 pub mod paging;
 mod pmm;
 
-pub use frame::{Frame, MemoryRange, PhysAddr, PAGE_SIZE};
+pub use frame::{align_up_to_page, Frame, MemoryRange, PhysAddr, PAGE_SIZE};
 pub use pmm::{
     alloc_frame, allocator_name, dealloc_frame, free_frame_count, init, total_usable_frames,
 };

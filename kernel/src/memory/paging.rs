@@ -166,9 +166,23 @@ impl PageTable {
     }
 
     pub fn translate_user_readable(&self, virt: VirtAddr) -> Option<PhysAddr> {
+        self.translate_user_with_flags(virt, PteFlags::READ)
+    }
+
+    #[cfg(feature = "test-kernel")]
+    pub fn translate_user_executable(&self, virt: VirtAddr) -> Option<PhysAddr> {
+        self.translate_user_with_flags(virt, PteFlags::EXECUTE)
+    }
+
+    #[cfg(feature = "test-kernel")]
+    pub fn translate_user_writable(&self, virt: VirtAddr) -> Option<PhysAddr> {
+        self.translate_user_with_flags(virt, PteFlags::WRITE)
+    }
+
+    fn translate_user_with_flags(&self, virt: VirtAddr, required: PteFlags) -> Option<PhysAddr> {
         let entry = self.leaf_entry(virt)?;
         let flags = PteFlags(entry);
-        if !flags.contains(PteFlags::USER) || !flags.contains(PteFlags::READ) {
+        if !flags.contains(PteFlags::USER) || !flags.contains(required) {
             return None;
         }
 

@@ -8,6 +8,7 @@ $env:PATH = "$qemuDir;$env:PATH"
 
 Push-Location $repoRoot
 try {
+    & (Join-Path $PSScriptRoot "build-user.ps1")
     cargo build -p kernel --target riscv64gc-unknown-none-elf --features test-kernel
 
     qemu-system-riscv64 `
@@ -20,4 +21,3 @@ try {
 finally {
     Pop-Location
 }
-

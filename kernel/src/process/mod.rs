@@ -1,28 +1,19 @@
-//! The first process abstraction and its fixed, embedded init image.
-
-use core::{arch::global_asm, slice};
+//! The first process abstraction backed by a loader-produced user image.
 
 use crate::{
     arch::riscv64::{csr, trap},
-    memory::{
-        address_space::{AddressSpace, AddressSpaceError, USER_CODE_BASE, USER_STACK_TOP},
-        paging,
-    },
+    loader::{self, LoadError},
+    memory::{address_space::AddressSpace, paging},
     println, task,
     task::{TaskId, TaskState},
 };
 
-global_asm!(include_str!("init.S"));
-
-extern "C" {
-    static __user_init_start: u8;
-    static __user_init_end: u8;
-}
+const INIT_IMAGE: &[u8] = include_bytes!("../../../user/bin/init.sbin");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProcessError {
     AlreadyLoaded,
-    AddressSpace(AddressSpaceError),
+    Load(LoadError),
     TaskSpawnFailed,
     NotLoaded,
     StillRunning,
@@ -33,6 +24,8 @@ pub enum ProcessError {
 struct Process {
     task_id: TaskId,
     address_space: AddressSpace,
+    entry_point: usize,
+    stack_pointer: usize,
 }
 
 static mut INIT_PROCESS: Option<Process> = None;
@@ -42,7 +35,11 @@ pub fn spawn_init() -> Result<TaskId, ProcessError> {
         return Err(ProcessError::AlreadyLoaded);
     }
 
-    let address_space = AddressSpace::new(init_image()).map_err(ProcessError::AddressSpace)?;
+    println!("[loader] load /bin/init");
+    let program = loader::load(INIT_IMAGE).map_err(ProcessError::Load)?;
+    println!("[loader] entry = {:#x}", program.entry_point());
+    println!("[loader] user stack = {:#x}", program.stack_pointer());
+    let (address_space, entry_point, stack_pointer) = program.into_parts();
     let task_id = match task::spawn(user_process_entry) {
         Ok(task_id) => task_id,
         Err(_) => {
@@ -55,6 +52,8 @@ pub fn spawn_init() -> Result<TaskId, ProcessError> {
         INIT_PROCESS = Some(Process {
             task_id,
             address_space,
+            entry_point,
+            stack_pointer,
         });
     }
     Ok(task_id)
@@ -98,19 +97,10 @@ fn user_process_entry() {
     process.address_space.activate();
 
     let frame = trap::TrapFrame {
-        sp: USER_STACK_TOP,
-        sepc: USER_CODE_BASE,
+        sp: process.stack_pointer,
+        sepc: process.entry_point,
         sstatus: csr::user_sstatus(),
         ..trap::TrapFrame::default()
     };
     unsafe { trap::enter_user(&frame) }
-}
-
-fn init_image() -> &'static [u8] {
-    unsafe {
-        let start = core::ptr::addr_of!(__user_init_start);
-        let end = core::ptr::addr_of!(__user_init_end);
-        let length = end.offset_from(start) as usize;
-        slice::from_raw_parts(start, length)
-    }
 }

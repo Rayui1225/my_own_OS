@@ -17,31 +17,79 @@ pub fn run() -> ! {
         heap_box(),
         heap_vec(),
         heap_string(),
-        user_address_space(),
+        simplebin_rejects_bad_magic(),
+        program_loader_maps_segments(),
         cooperative_and_preemptive_task_switch(),
         user_mode_syscalls(),
     ];
     run_tests(&tests)
 }
 
-fn user_address_space() -> TestCase {
+fn simplebin_rejects_bad_magic() -> TestCase {
     TestCase {
-        name: "user_address_space",
+        name: "simplebin_rejects_bad_magic",
         run: || {
-            const IMAGE: &[u8] = &[0x13, 0x00, 0x00, 0x00];
+            let image = simplebin_image(&[0x13, 0, 0, 0], &[], 0);
+            let mut invalid = image;
+            invalid[0] = b'X';
+            assert!(matches!(
+                crate::loader::load(&invalid),
+                Err(crate::loader::LoadError::Parse(
+                    crate::loader::ParseError::InvalidMagic
+                ))
+            ));
+        },
+    }
+}
+
+fn program_loader_maps_segments() -> TestCase {
+    TestCase {
+        name: "program_loader_maps_segments",
+        run: || {
+            let mut text = Vec::from([0x13; crate::memory::PAGE_SIZE + 1]);
+            text[crate::memory::PAGE_SIZE] = 0x73;
+            let data = [0xaa, 0xbb, 0xcc];
+            let image = simplebin_image(&text, &data, crate::memory::PAGE_SIZE);
 
             let free_before = crate::memory::free_frame_count();
-            let address_space = crate::memory::address_space::AddressSpace::new(IMAGE)
-                .expect("failed to create test user address space");
+            let program = crate::loader::load(&image).expect("failed to load SimpleBin test image");
+            let address_space = program.address_space();
+            let text_base = crate::loader::USER_TEXT_BASE;
+            let data_base = (text_base + text.len() + crate::memory::PAGE_SIZE - 1)
+                & !(crate::memory::PAGE_SIZE - 1);
             assert_eq!(
-                address_space.read_user_byte(crate::memory::address_space::USER_CODE_BASE),
-                Some(IMAGE[0])
+                address_space.read_user_byte(text_base + crate::memory::PAGE_SIZE),
+                Some(0x73)
             );
+            assert_eq!(address_space.read_user_byte(data_base + 1), Some(0xbb));
+            assert_eq!(
+                address_space.read_user_byte(data_base + data.len()),
+                Some(0)
+            );
+            assert!(address_space.is_user_executable(text_base));
+            assert!(!address_space.is_user_writable(text_base));
+            assert!(address_space.is_user_writable(data_base));
+            assert!(!address_space.is_user_executable(data_base));
             assert_eq!(address_space.read_user_byte(0x8020_0000), None);
-            address_space.destroy();
+            program.destroy();
             assert_eq!(crate::memory::free_frame_count(), free_before);
         },
     }
+}
+
+fn simplebin_image(text: &[u8], data: &[u8], bss_size: usize) -> Vec<u8> {
+    let mut image = Vec::with_capacity(32 + text.len() + data.len());
+    image.extend_from_slice(b"SBIN");
+    image.extend_from_slice(&1u16.to_le_bytes());
+    image.extend_from_slice(&32u16.to_le_bytes());
+    image.extend_from_slice(&(crate::loader::USER_TEXT_BASE as u64).to_le_bytes());
+    image.extend_from_slice(&(text.len() as u32).to_le_bytes());
+    image.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    image.extend_from_slice(&(bss_size as u32).to_le_bytes());
+    image.extend_from_slice(&0u32.to_le_bytes());
+    image.extend_from_slice(text);
+    image.extend_from_slice(data);
+    image
 }
 
 fn user_mode_syscalls() -> TestCase {

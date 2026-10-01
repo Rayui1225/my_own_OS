@@ -936,42 +936,95 @@ Test kernel 另外驗證 address space 建立後只有 `USER|READ` mapping 可�
 
 讓 kernel 可以載入 userspace program。
 
-### 初期格式
+### SimpleBin v1 格式
 
-先使用自定義 SimpleBin：
+所有整數皆為 little-endian，header 固定為 32 bytes：
 
 ```text
-SimpleBin
-  magic
-  entry_point
-  text_size
-  data_size
-  text
-  data
+offset  size  field
+0x00    4     magic = "SBIN"
+0x04    2     version = 1
+0x06    2     header_size = 32
+0x08    8     entry_point
+0x10    4     text_size
+0x14    4     data_size
+0x18    4     bss_size
+0x1c    4     flags = 0 (reserved)
+0x20    ...   text bytes, followed by initialized data bytes
 ```
+
+`bss` 不儲存在檔案內，由 loader 配置後歸零。Parser 以 byte slice 搭配
+`from_le_bytes` 解碼，不直接把不可信 bytes cast 成 Rust struct。
 
 ### 功能需求
 
 - parse SimpleBin。
-- 建立 user address space。
-- map text segment。
-- map data segment。
-- 建立 user stack。
-- 回傳 process entry point。
+- loader 接受 `&[u8]`，不直接依賴 filesystem。
+- 建立可擁有任意數量 frame 的 user address space。
+- 將 text map 為 `R|X|U`。
+- 將 data + bss map 為 `R|W|U`，並將 bss 歸零。
+- 建立 `R|W|U` user stack 與 unmapped guard page。
+- 驗證 entry point 位於 text segment 內。
+- 失敗時釋放已配置的 data frame 與 page-table frame。
+- 回傳 address space、entry point 與 stack pointer。
+
+### 固定 virtual layout
+
+```text
+text base       = 0x0001_0000
+data base       = align_up(text end, 4 KiB)
+image limit     = 0x0100_0000
+stack guard     = 0x3fff_e000 .. 0x3fff_f000 (unmapped)
+stack page      = 0x3fff_f000 .. 0x4000_0000
+stack top       = 0x4000_0000
+```
+
+stack 延續 Milestone 11 的 `0x4000_0000`，確保 user image 與 stack 都位於 process
+私有的 Sv39 root entry 0；不使用原草案的 `0x8000_0000`，避免落入目前共享的 kernel RAM subtree。
+
+### User build pipeline
+
+```text
+user/init (no_std Rust)
+  -> RISC-V ELF（user linker script）
+  -> llvm-objcopy 抽出 .text / .data
+  -> llvm-nm 取得 _start 與 bss 範圍
+  -> scripts/build-user.ps1 封裝成 user/bin/init.sbin
+  -> kernel include_bytes!
+  -> loader::load(&[u8])
+```
+
+`run-kernel.ps1` 與 `run-tests.ps1` 都會先執行 `build-user.ps1`，因此 kernel 內嵌的
+永遠是最新 SimpleBin image。Milestone 14 加入 filesystem 後，只需替換 bytes 的來源，loader API 不變。
 
 ### 驗收標準
 
 ```text
 [loader] load /bin/init
 [loader] entry = 0x10000
-[loader] user stack = 0x80000000
+[loader] user stack = 0x40000000
+[user] hello from loaded Rust program
+[process] pid=1 exited with code 0
 ```
+
+Test kernel 額外驗證：錯誤 magic 會被拒絕、跨頁 text 正確載入、data 正確複製、
+bss 為零、text/data 符合 W^X 權限，以及銷毀 address space 後 PMM free-frame count 回復。
 
 ### Agent 討論重點
 
 - SimpleBin 格式要怎麼設計才容易產生？
 - user program build pipeline 怎麼做？
 - loader 是否要直接讀 filesystem，還是吃 bytes？
+
+### 實作順序
+
+```text
+12A  SimpleBin Parser
+12B  Generic AddressSpace
+12C  Program Loader
+12D  Rust User Build Pipeline
+12E  End-to-End QEMU Validation
+```
 
 ---
 

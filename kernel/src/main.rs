@@ -6,6 +6,7 @@ extern crate alloc;
 mod arch;
 mod console;
 mod driver;
+mod loader;
 mod memory;
 mod panic;
 mod process;
