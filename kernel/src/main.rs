@@ -48,6 +48,7 @@ extern "C" fn kernel_main(_hart_id: usize, _dtb_pa: usize) -> ! {
             "[heap] allocated bytes = {}",
             memory::heap::allocated_bytes()
         );
+        verify_ramdisk();
         let free_frames_before_process = memory::free_frame_count();
         println!("[process] loading init");
         let init_task = process::spawn_init().expect("failed to create init process");
@@ -59,6 +60,28 @@ extern "C" fn kernel_main(_hart_id: usize, _dtb_pa: usize) -> ! {
         assert_eq!(memory::free_frame_count(), free_frames_before_process);
         arch::riscv64::boot::wait_forever()
     }
+}
+
+#[cfg(not(feature = "test-kernel"))]
+fn verify_ramdisk() {
+    use driver::block::{Block, BlockDevice, BlockId, RamDisk, BLOCK_SIZE};
+
+    let mut storage = [0u8; BLOCK_SIZE * 4];
+    let mut disk = RamDisk::new(&mut storage).expect("failed to create ramdisk");
+    let input: Block = [0x5a; BLOCK_SIZE];
+    let mut output: Block = [0; BLOCK_SIZE];
+
+    println!("[block] device = ramdisk");
+    println!("[block] block size = {}", BLOCK_SIZE);
+    println!("[block] block count = {}", disk.block_count());
+    println!("[block] write block 1");
+    disk.write_block(BlockId::new(1), &input)
+        .expect("ramdisk write failed");
+    println!("[block] read block 1");
+    disk.read_block(BlockId::new(1), &mut output)
+        .expect("ramdisk read failed");
+    assert_eq!(output, input);
+    println!("[block] verify ok");
 }
 
 #[panic_handler]

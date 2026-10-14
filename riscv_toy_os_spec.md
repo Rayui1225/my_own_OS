@@ -1048,28 +1048,86 @@ ramdisk
 virtio-blk
 ```
 
+Milestone 13 只驗證 block device 邊界，不加入 global device registry、filesystem、cache、
+DMA 或 interrupt-driven I/O。未來的 `virtio-blk` 會實作相同 trait。
+
 ### 功能需求
+
+device block 固定為 512 bytes，與 4 KiB memory page 分開。Filesystem 若採用 4 KiB
+block，可以在上層組合 8 個 device blocks。
 
 提供 block-level API：
 
 ```text
-read_block(block_id, buffer)
-write_block(block_id, buffer)
+BlockId(u64)
+Block = [u8; 512]
+
+BlockDevice
+  block_count()
+  read_block(&mut self, block_id, &mut Block)
+  write_block(&mut self, block_id, &Block)
 ```
+
+支援：
+
+- `BlockId` newtype，避免 byte offset、frame number 與 block number 混用。
+- 固定大小 `Block`，在 compile time 保證每次都是完整 block I/O。
+- `RamDisk<'a>` 借用呼叫端提供的 mutable byte slice，不配置 heap。
+- backing storage 必須非空，且大小為 512 的倍數。
+- block offset 使用 checked conversion、multiplication 與 addition。
+- 超出容量的 I/O 回傳 `BlockError::OutOfBounds`。
+- read 與 write 都使用 `&mut self`，保留未來 stateful hardware driver 的實作空間。
+
+RamDisk 本身不負責同步，也沒有 unsafe。當裝置需要跨 task 分享時，由未來的 device
+manager 在外層加入 interrupt-safe lock，避免 driver 綁定 scheduler policy。
+
+### 架構邊界
+
+```text
+SimpleFS（Milestone 14）
+  -> BlockDevice trait
+       -> RamDisk（Milestone 13）
+       -> VirtioBlk（未來）
+```
+
+block driver 只理解 block number 與 bytes，不理解 path、directory、inode、file descriptor
+或 SimpleBin。Ramdisk filesystem image 的產生與嵌入留到 Milestone 14；本階段使用
+zero-filled writable storage 驗證 I/O contract。
 
 ### 驗收標準
 
 ```text
-[block] read block 0
+[block] device = ramdisk
+[block] block size = 512
+[block] block count = 4
 [block] write block 1
+[block] read block 1
 [block] verify ok
 ```
+
+Test kernel 另外驗證：
+
+```text
+ramdisk_block_io ... ok
+ramdisk_rejects_invalid_requests ... ok
+```
+
+涵蓋 write/read round trip、相鄰 block 不受影響、空或未對齊的 backing storage 被拒絕，
+以及一般越界與極大 `BlockId` 都安全回傳錯誤。
 
 ### Agent 討論重點
 
 - block size 固定多少？
 - ramdisk image 如何嵌入 kernel 或掛到 QEMU？
 - block driver 和 filesystem API 怎麼分層？
+
+### 實作順序
+
+```text
+13A  Block API
+13B  Safe Borrowed RamDisk
+13C  QEMU Tests and Boot Validation
+```
 
 ---
 

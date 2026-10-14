@@ -2,8 +2,8 @@
 
 Learning-focused RISC-V toy OS project built in Rust.
 
-Current progress: Milestones 0-12, through loading a Rust userspace program from the custom
-SimpleBin format.
+Current progress: Milestones 0-13, through a safe, memory-backed block device behind a reusable
+block I/O interface.
 
 Run the kernel or its QEMU test suite from PowerShell:
 

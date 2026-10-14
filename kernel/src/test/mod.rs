@@ -17,12 +17,77 @@ pub fn run() -> ! {
         heap_box(),
         heap_vec(),
         heap_string(),
+        ramdisk_block_io(),
+        ramdisk_rejects_invalid_requests(),
         simplebin_rejects_bad_magic(),
         program_loader_maps_segments(),
         cooperative_and_preemptive_task_switch(),
         user_mode_syscalls(),
     ];
     run_tests(&tests)
+}
+
+fn ramdisk_block_io() -> TestCase {
+    TestCase {
+        name: "ramdisk_block_io",
+        run: || {
+            use crate::driver::block::{Block, BlockDevice, BlockId, RamDisk, BLOCK_SIZE};
+
+            let mut storage = [0u8; BLOCK_SIZE * 4];
+            let mut disk = RamDisk::new(&mut storage).expect("failed to create test ramdisk");
+            let input: Block = [0xa5; BLOCK_SIZE];
+            let mut output: Block = [0; BLOCK_SIZE];
+            let mut untouched: Block = [0xff; BLOCK_SIZE];
+
+            assert_eq!(disk.block_count(), 4);
+            disk.write_block(BlockId::new(1), &input)
+                .expect("failed to write ramdisk block");
+            disk.read_block(BlockId::new(1), &mut output)
+                .expect("failed to read ramdisk block");
+            disk.read_block(BlockId::new(0), &mut untouched)
+                .expect("failed to read neighboring ramdisk block");
+
+            assert_eq!(output, input);
+            assert_eq!(untouched, [0; BLOCK_SIZE]);
+        },
+    }
+}
+
+fn ramdisk_rejects_invalid_requests() -> TestCase {
+    TestCase {
+        name: "ramdisk_rejects_invalid_requests",
+        run: || {
+            use crate::driver::block::{
+                Block, BlockDevice, BlockError, BlockId, RamDisk, BLOCK_SIZE,
+            };
+
+            let mut empty = [];
+            assert!(matches!(
+                RamDisk::new(&mut empty),
+                Err(BlockError::InvalidStorageSize)
+            ));
+
+            let mut misaligned = [0u8; BLOCK_SIZE + 1];
+            assert!(matches!(
+                RamDisk::new(&mut misaligned),
+                Err(BlockError::InvalidStorageSize)
+            ));
+
+            let mut storage = [0u8; BLOCK_SIZE * 2];
+            let mut disk = RamDisk::new(&mut storage).expect("failed to create test ramdisk");
+            let input: Block = [0x5a; BLOCK_SIZE];
+            let mut output: Block = [0; BLOCK_SIZE];
+
+            assert_eq!(
+                disk.write_block(BlockId::new(2), &input),
+                Err(BlockError::OutOfBounds)
+            );
+            assert_eq!(
+                disk.read_block(BlockId::new(u64::MAX), &mut output),
+                Err(BlockError::OutOfBounds)
+            );
+        },
+    }
 }
 
 fn simplebin_rejects_bad_magic() -> TestCase {

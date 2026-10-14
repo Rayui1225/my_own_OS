@@ -1,3 +1,5 @@
+pub mod block;
+
 #[cfg(feature = "test-kernel")]
 pub mod qemu;
 
