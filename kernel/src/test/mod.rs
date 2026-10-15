@@ -19,12 +19,115 @@ pub fn run() -> ! {
         heap_string(),
         ramdisk_block_io(),
         ramdisk_rejects_invalid_requests(),
+        simplefs_mount_and_paths(),
+        simplefs_fd_table(),
         simplebin_rejects_bad_magic(),
         program_loader_maps_segments(),
         cooperative_and_preemptive_task_switch(),
         user_mode_syscalls(),
     ];
     run_tests(&tests)
+}
+
+fn simplefs_mount_and_paths() -> TestCase {
+    TestCase {
+        name: "simplefs_mount_and_paths",
+        run: || {
+            use crate::driver::block::RamDisk;
+            use crate::fs::{FsError, SimpleFs, IMAGE};
+
+            let mut corrupt = Vec::from(IMAGE);
+            corrupt[0] = b'X';
+            let disk = RamDisk::new(&mut corrupt).expect("invalid test disk size");
+            assert!(matches!(SimpleFs::mount(disk), Err(FsError::CorruptImage)));
+
+            let mut corrupt_inode = Vec::from(IMAGE);
+            corrupt_inode[512 + 8..512 + 12].copy_from_slice(&u32::MAX.to_le_bytes());
+            let disk = RamDisk::new(&mut corrupt_inode).expect("invalid test disk size");
+            assert!(matches!(SimpleFs::mount(disk), Err(FsError::CorruptImage)));
+
+            let mut storage = Vec::from(IMAGE);
+            let disk = RamDisk::new(&mut storage).expect("invalid test disk size");
+            let mut fs = SimpleFs::mount(disk).expect("failed to mount test SimpleFS");
+            let mut root = Vec::new();
+            fs.readdir("/", |name| root.push(String::from(name)))
+                .expect("failed to list root");
+            assert_eq!(root, ["bin", "etc"]);
+            let mut bin = Vec::new();
+            fs.readdir("/bin", |name| bin.push(String::from(name)))
+                .expect("failed to list bin");
+            assert_eq!(bin, ["init"]);
+            assert!(matches!(fs.open("/bin/missing"), Err(FsError::NotFound)));
+            assert!(matches!(fs.open("bin/init"), Err(FsError::InvalidPath)));
+            assert!(matches!(fs.open("/bin/../init"), Err(FsError::InvalidPath)));
+            assert!(matches!(fs.open("/bin"), Err(FsError::NotFile)));
+            assert!(matches!(
+                fs.readdir("/etc/motd", |_| {}),
+                Err(FsError::NotDirectory)
+            ));
+        },
+    }
+}
+
+fn simplefs_fd_table() -> TestCase {
+    TestCase {
+        name: "simplefs_fd_table",
+        run: || {
+            use crate::driver::block::RamDisk;
+            use crate::fs::{SimpleFs, IMAGE};
+            use crate::process::{FdError, FdTable};
+
+            let mut storage = Vec::from(IMAGE);
+            let disk = RamDisk::new(&mut storage).expect("invalid test disk size");
+            let mut fs = SimpleFs::mount(disk).expect("failed to mount test SimpleFS");
+            let mut fds = FdTable::new();
+            let fd = fds.open(&mut fs, "/bin/init").expect("failed to open init");
+            assert_eq!(fd, 3);
+            let second_fd = fds
+                .open(&mut fs, "/bin/init")
+                .expect("failed to open init twice");
+            assert_eq!(second_fd, 4);
+            let expected = include_bytes!("../../../user/bin/init.sbin");
+            let mut output = Vec::new();
+            let mut chunk = [0u8; 333];
+            loop {
+                let count = fds
+                    .read(&mut fs, fd, &mut chunk)
+                    .expect("failed to read init");
+                if count == 0 {
+                    break;
+                }
+                output.extend_from_slice(&chunk[..count]);
+            }
+            assert_eq!(output, expected);
+            let mut first = [0u8; 4];
+            assert_eq!(fds.read(&mut fs, second_fd, &mut first), Ok(4));
+            assert_eq!(&first, b"SBIN");
+            fds.close(fd).expect("failed to close init");
+            assert_eq!(fds.read(&mut fs, fd, &mut chunk), Err(FdError::BadFd));
+            assert_eq!(fds.close(fd), Err(FdError::BadFd));
+            assert_eq!(fds.close(1), Err(FdError::BadFd));
+            fds.close(second_fd).expect("failed to close second fd");
+
+            let motd = fds.open(&mut fs, "/etc/motd").expect("failed to open motd");
+            assert_eq!(motd, 3);
+            let mut message = [0u8; 64];
+            let count = fds
+                .read(&mut fs, motd, &mut message)
+                .expect("failed to read motd");
+            assert_eq!(&message[..count], b"Welcome to toy-os\n");
+            fds.close(motd).expect("failed to close motd");
+
+            for expected_fd in 3..=15 {
+                assert_eq!(fds.open(&mut fs, "/etc/motd"), Ok(expected_fd));
+            }
+            assert_eq!(fds.open(&mut fs, "/etc/motd"), Err(FdError::TableFull));
+            fds.close(7).expect("failed to release a full-table slot");
+            assert_eq!(fds.open(&mut fs, "/etc/motd"), Ok(7));
+            fds.close_all();
+            assert_eq!(fds.read(&mut fs, 7, &mut message), Err(FdError::BadFd));
+        },
+    }
 }
 
 fn ramdisk_block_io() -> TestCase {
@@ -166,7 +269,12 @@ fn user_mode_syscalls() -> TestCase {
 
             let free_before = crate::memory::free_frame_count();
             println!("[process] loading init");
-            let init_task = crate::process::spawn_init().expect("failed to create init process");
+            let mut storage = Vec::from(crate::fs::IMAGE);
+            let disk =
+                crate::driver::block::RamDisk::new(&mut storage).expect("invalid test disk size");
+            let mut fs = crate::fs::SimpleFs::mount(disk).expect("failed to mount test SimpleFS");
+            let init_task =
+                crate::process::spawn_init(&mut fs).expect("failed to create init process");
             crate::arch::riscv64::timer::init();
             crate::task::run();
             crate::arch::riscv64::timer::stop();

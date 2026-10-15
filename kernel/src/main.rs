@@ -6,6 +6,7 @@ extern crate alloc;
 mod arch;
 mod console;
 mod driver;
+mod fs;
 mod loader;
 mod memory;
 mod panic;
@@ -49,9 +50,23 @@ extern "C" fn kernel_main(_hart_id: usize, _dtb_pa: usize) -> ! {
             memory::heap::allocated_bytes()
         );
         verify_ramdisk();
+        let mut filesystem_storage = alloc::vec::Vec::from(fs::IMAGE);
+        let disk = driver::block::RamDisk::new(&mut filesystem_storage)
+            .expect("invalid filesystem image size");
+        let mut filesystem = fs::SimpleFs::mount(disk).expect("failed to mount SimpleFS");
+        println!("[fs] mounted SimpleFS");
+        println!("[fs] /:");
+        filesystem
+            .readdir("/", |name| println!("[fs]   {}", name))
+            .expect("failed to list root directory");
+        println!("[fs] /bin:");
+        filesystem
+            .readdir("/bin", |name| println!("[fs]   {}", name))
+            .expect("failed to list bin directory");
         let free_frames_before_process = memory::free_frame_count();
         println!("[process] loading init");
-        let init_task = process::spawn_init().expect("failed to create init process");
+        let init_task =
+            process::spawn_init(&mut filesystem).expect("failed to create init process");
         arch::riscv64::timer::init();
         task::run();
         arch::riscv64::timer::stop();

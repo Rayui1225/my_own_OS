@@ -1,19 +1,26 @@
-//! The first process abstraction backed by a loader-produced user image.
+//! The first process abstraction backed by a filesystem-loaded user image.
+
+mod fd_table;
+
+use alloc::vec::Vec;
+
+pub use fd_table::{FdError, FdTable};
 
 use crate::{
     arch::riscv64::{csr, trap},
+    driver::block::BlockDevice,
+    fs::SimpleFs,
     loader::{self, LoadError},
     memory::{address_space::AddressSpace, paging},
     println, task,
     task::{TaskId, TaskState},
 };
 
-const INIT_IMAGE: &[u8] = include_bytes!("../../../user/bin/init.sbin");
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProcessError {
     AlreadyLoaded,
     Load(LoadError),
+    File(FdError),
     TaskSpawnFailed,
     NotLoaded,
     StillRunning,
@@ -26,17 +33,36 @@ struct Process {
     address_space: AddressSpace,
     entry_point: usize,
     stack_pointer: usize,
+    fd_table: FdTable,
 }
 
 static mut INIT_PROCESS: Option<Process> = None;
 
-pub fn spawn_init() -> Result<TaskId, ProcessError> {
+pub fn spawn_init<D: BlockDevice>(fs: &mut SimpleFs<D>) -> Result<TaskId, ProcessError> {
     if unsafe { INIT_PROCESS.is_some() } {
         return Err(ProcessError::AlreadyLoaded);
     }
 
-    println!("[loader] load /bin/init");
-    let program = loader::load(INIT_IMAGE).map_err(ProcessError::Load)?;
+    let mut fd_table = FdTable::new();
+    let fd = fd_table.open(fs, "/bin/init").map_err(ProcessError::File)?;
+    let mut image = Vec::new();
+    let mut chunk = [0u8; 512];
+    loop {
+        let count = fd_table
+            .read(fs, fd, &mut chunk)
+            .map_err(ProcessError::File)?;
+        if count == 0 {
+            break;
+        }
+        image.extend_from_slice(&chunk[..count]);
+    }
+    fd_table.close(fd).map_err(ProcessError::File)?;
+
+    println!(
+        "[loader] load /bin/init from SimpleFS ({} bytes)",
+        image.len()
+    );
+    let program = loader::load(&image).map_err(ProcessError::Load)?;
     println!("[loader] entry = {:#x}", program.entry_point());
     println!("[loader] user stack = {:#x}", program.stack_pointer());
     let (address_space, entry_point, stack_pointer) = program.into_parts();
@@ -54,6 +80,7 @@ pub fn spawn_init() -> Result<TaskId, ProcessError> {
             address_space,
             entry_point,
             stack_pointer,
+            fd_table,
         });
     }
     Ok(task_id)
@@ -82,7 +109,8 @@ pub fn reap_init() -> Result<i32, ProcessError> {
 
     paging::activate_kernel_page_table().map_err(|_| ProcessError::KernelPageTableUnavailable)?;
     let exit_code = task::exit_code(task_id).ok_or(ProcessError::MissingExitCode)?;
-    let process = unsafe { INIT_PROCESS.take().ok_or(ProcessError::NotLoaded)? };
+    let mut process = unsafe { INIT_PROCESS.take().ok_or(ProcessError::NotLoaded)? };
+    process.fd_table.close_all();
     process.address_space.destroy();
     Ok(exit_code)
 }

@@ -990,12 +990,14 @@ user/init (no_std Rust)
   -> llvm-objcopy 抽出 .text / .data
   -> llvm-nm 取得 _start 與 bss 範圍
   -> scripts/build-user.ps1 封裝成 user/bin/init.sbin
-  -> kernel include_bytes!
+  -> scripts/build-fs.ps1 封裝進 fs/image/simplefs.img（Milestone 14）
+  -> kernel SimpleFS 讀取 /bin/init
   -> loader::load(&[u8])
 ```
 
-`run-kernel.ps1` 與 `run-tests.ps1` 都會先執行 `build-user.ps1`，因此 kernel 內嵌的
-永遠是最新 SimpleBin image。Milestone 14 加入 filesystem 後，只需替換 bytes 的來源，loader API 不變。
+`run-kernel.ps1` 與 `run-tests.ps1` 會依序執行 `build-user.ps1`、`build-fs.ps1`，
+再編譯 kernel；因此 kernel 內嵌的 filesystem image 包含最新的 SimpleBin。
+Milestone 14 只替換 bytes 的來源，loader API 不變。
 
 ### 驗收標準
 
@@ -1135,56 +1137,70 @@ ramdisk_rejects_invalid_requests ... ok
 
 ### 目標
 
-實作一個最小 filesystem。
+在 Milestone 13 的 `BlockDevice` 上實作可掛載的唯讀 SimpleFS，並讓第一個 user
+program 從 `/bin/init` 檔案載入，而不是直接嵌入 SimpleBin。
 
-### 功能需求
+### 磁碟格式與邊界
 
-支援：
-
-```text
-open(path)
-read(fd, buf)
-close(fd)
-readdir(path)
-```
-
-Filesystem 格式可極簡：
+Filesystem block 固定 512 bytes。image 由 `scripts/build-fs.ps1` 產生，包含：
 
 ```text
-superblock
-inode table
-data blocks
-directory entries
+block 0   superblock：magic SFS1、version、總 block 數、inode 數、root inode
+block 1   inode table：每筆 32 bytes，kind、size、start block、block count
+block 2+  directory entries / file data：directory entry 每筆 32 bytes
 ```
 
-需要支援以下檔案：
+每個 directory entry 保存 inode ID 與最多 27 bytes 的名稱；檔案使用連續的 data
+blocks。mount 與 lookup 須拒絕錯誤的 metadata，所有 block I/O 經過 `BlockDevice`
+trait，不讓 filesystem 直接依賴 RamDisk。
+
+### API 與生命週期
+
+```text
+SimpleFs::mount(device)
+SimpleFs::open(path) -> FileHandle
+SimpleFs::read(&mut FileHandle, buf)
+SimpleFs::readdir(path, visit)
+Process::FdTable::open/read/close
+```
+
+path 為絕對路徑；本階段不支援 `.`、`..`、重複或結尾的 `/`。每個 process 自己持有
+fd table，0-2 保留給標準輸入輸出，3-15 給檔案。每次 open 有獨立 offset；process
+reap 時關閉剩餘 fd。現階段 fd API 只供 kernel 內部使用，尚未加入 userspace file
+syscall。唯讀版本不提供 create/write/delete。
+
+image 內先放：
 
 ```text
 /bin/init
-/bin/shell
-/bin/ls
 /etc/motd
 ```
+
+`/bin/shell` 與 `/bin/ls` 等 userspace 程式留待後續 milestone；Milestone 14 不宣稱
+已具備互動式 `fs>` CLI。
 
 ### 驗收標準
 
 ```text
-fs> ls /
+[fs] /
 bin
 etc
-
-fs> ls /bin
+[fs] /bin
 init
-shell
-ls
+[loader] load /bin/init from SimpleFS
+[user] hello from loaded Rust program
+[process] pid=1 exited with code 0
 ```
+
+QEMU test kernel 驗證掛載拒絕錯誤 magic、路徑查找、目錄列舉、跨 block 讀取、
+多次 open 的獨立 offset、fd 範圍/滿額/回收、`/etc/motd` 內容與 init 載入執行。
 
 ### Agent 討論重點
 
-- 要不要先做 read-only filesystem？
-- path lookup 怎麼做？
-- fd table 是 process-level 還是 global？
-- directory entry 格式怎麼設計？
+- 已選擇唯讀版本，避免在此階段加入寫入與一致性問題。
+- path lookup 逐層查 directory entry，不在 block driver 裡理解路徑。
+- fd table 是 process-level，而非 global；SimpleFS 只提供 FileHandle。
+- 固定 32-byte inode / directory entry，讓 parser 與 image builder 維持簡單。
 
 ---
 
